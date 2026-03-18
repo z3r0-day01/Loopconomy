@@ -1,0 +1,15 @@
+{
+  "1483311700542230550": {
+    "enabled": false,
+    "spam": true,
+    "links": false,
+    "caps": false,
+    "wordlist": [
+      "spam",
+      "scam",
+      "fake"
+    ],
+    "capsThreshold": 0.7,
+    "spamThreshold": 5
+  }
+}

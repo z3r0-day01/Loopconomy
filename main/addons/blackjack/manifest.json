@@ -1,0 +1,8 @@
+{
+    "name": "Blackjack Pro",
+    "description": "Professional Blackjack game with splits, doubles, surrender, etc.",
+    "version": "1.0.0",
+    "entry": "blackjack.ts",
+    "trustLevel": 2,
+    "commandList": ["blackjack"]
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Loopconomy Discord Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=z3r0
+WorkingDirectory=/home/z3r0/loop/main
+ExecStart=/usr/bin/node main.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

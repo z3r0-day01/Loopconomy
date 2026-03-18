@@ -1,0 +1,8 @@
+{
+    "name": "Gambling & Economy",
+    "description": "Daily rewards, coinflip, and slot machine games",
+    "version": "1.0.0",
+    "entry": "gambling.ts",
+    "trustLevel": 2,
+    "commandList": ["daily", "coinflip", "slots"]
+}

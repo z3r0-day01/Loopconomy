@@ -1,0 +1,8 @@
+{
+    "name": "Wheel of Fortune",
+    "description": "Spin the wheel and win prizes!",
+    "version": "1.0.0",
+    "entry": "wheelo.ts",
+    "trustLevel": 2,
+    "commandList": ["wheel"]
+}

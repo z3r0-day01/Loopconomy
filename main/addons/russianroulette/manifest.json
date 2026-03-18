@@ -1,0 +1,8 @@
+{
+    "name": "Russian Roulette",
+    "description": "High stakes Russian Roulette - loser gets muted!",
+    "version": "1.0.0",
+    "entry": "russianroulette.ts",
+    "trustLevel": 3,
+    "commandList": ["russianroulette"]
+}

@@ -1,0 +1,8 @@
+{
+    "name": "AutoMod",
+    "description": "Automatic moderation - spam, links, caps, word filtering",
+    "version": "1.0.0",
+    "entry": "automod.ts",
+    "trustLevel": 3,
+    "commandList": ["automod"]
+}

@@ -1,0 +1,59 @@
+{
+    "addons": {
+        "blackjack": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["blackjack"] 
+        },
+        "poker": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["poker"] 
+        },
+        "gambling": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["daily", "coinflip", "slots"] 
+        },
+        "keno": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["keno"] 
+        },
+        "roulette": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["roulette"] 
+        },
+        "bingo": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["bingo"] 
+        },
+        "wheelo": { 
+            "enabled": true, 
+            "trustLevel": 2, 
+            "commandList": ["wheel"] 
+        },
+        "russianroulette": { 
+            "enabled": true, 
+            "trustLevel": 3, 
+            "commandList": ["russianroulette"] 
+        },
+        "automod": { 
+            "enabled": true, 
+            "trustLevel": 3, 
+            "commandList": ["automod"] 
+        },
+        "copyright": { 
+            "enabled": true, 
+            "trustLevel": 3, 
+            "commandList": ["copyright"] 
+        },
+        "management": { 
+            "enabled": true, 
+            "trustLevel": 5, 
+            "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup"] 
+        }
+    }
+}

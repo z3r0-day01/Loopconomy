@@ -1,0 +1,8 @@
+{
+    "name": "Bot Management",
+    "description": "Manage the bot - status, logs, restart, shutdown, backup",
+    "version": "1.0.0",
+    "entry": "management.ts",
+    "trustLevel": 5,
+    "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup"]
+}

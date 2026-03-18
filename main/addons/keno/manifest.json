@@ -1,0 +1,8 @@
+{
+    "name": "Keno",
+    "description": "Classic lottery-style Keno game",
+    "version": "1.0.0",
+    "entry": "keno.ts",
+    "trustLevel": 2,
+    "commandList": ["keno"]
+}

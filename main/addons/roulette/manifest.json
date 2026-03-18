@@ -1,0 +1,8 @@
+{
+    "name": "Roulette",
+    "description": "Classic European Roulette",
+    "version": "1.0.0",
+    "entry": "roulette.ts",
+    "trustLevel": 2,
+    "commandList": ["roulette"]
+}

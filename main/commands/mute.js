@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 function parseTime(str) {
     const match = str.match(/^(\d+)(s|m|h|d)$/i);
@@ -16,6 +16,13 @@ function parseTime(str) {
     }
 }
 
+// Admin IDs
+const ADMIN_IDS = ['1328479692394725396', 'your_id_here']; // Add lyrics_loop and jkid88 IDs
+
+function isAdmin(userId) {
+    return ADMIN_IDS.includes(userId) || userId === '1328479692394725396';
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('mute')
@@ -27,22 +34,48 @@ module.exports = {
         .addStringOption(option =>
             option.setName('time')
                 .setDescription('10s, 5m, 1h, 1d')
-                .setRequired(true)),
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('Reason for mute')
+                .setRequired(false)),
 
     async execute(interaction) {
         const member = interaction.options.getMember('target');
         const timeStr = interaction.options.getString('time');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
         const timeMs = parseTime(timeStr);
 
         if (!timeMs) {
-            return interaction.reply({ content: "❌ Invalid time format!", ephemeral: true });
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Invalid Time Format')
+                .setDescription('Use format like: `10s`, `5m`, `1h`, `1d`')
+                .setColor('#FF0000');
+            return interaction.reply({ embeds: [embed], ephemeral: true });
         }
 
         if (!member || !member.manageable) {
-            return interaction.reply({ content: "❌ Can't mute that user.", ephemeral: true });
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Cannot Mute')
+                .setDescription('I cannot mute this user. They may have higher permissions than me.')
+                .setColor('#FF0000');
+            return interaction.reply({ embeds: [embed], ephemeral: true });
         }
 
-        await member.timeout(timeMs, `Muted by ${interaction.user.tag}`);
-        await interaction.reply(`✅ ${member.user.tag} muted for ${timeStr}`);
+        await member.timeout(timeMs, reason);
+        
+        const embed = new EmbedBuilder()
+            .setTitle('✅ User Muted')
+            .setColor('#00FF00')
+            .setThumbnail(member.user.displayAvatarURL())
+            .addFields(
+                { name: '👤 User', value: `${member.user.tag}`, inline: true },
+                { name: '⏱️ Duration', value: timeStr, inline: true },
+                { name: '📋 Reason', value: reason, inline: false }
+            )
+            .setFooter({ text: `Muted by ${interaction.user.tag}` })
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
     }
 };

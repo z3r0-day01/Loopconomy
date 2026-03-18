@@ -1,0 +1,8 @@
+{
+    "name": "Copyright Management",
+    "description": "Manage copyrighted content - add, remove, list",
+    "version": "1.0.0",
+    "entry": "copyright.ts",
+    "trustLevel": 3,
+    "commandList": ["copyright"]
+}
