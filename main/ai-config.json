@@ -1,0 +1,19 @@
+{
+  "enabled": false,
+  "model": "gemini-3-flash-preview:cloud",
+  "ollamaUrl": "http://localhost:11434",
+  "systemPrompt": "You are a chaotic, unhinged, unapologetically unfiltered Discord bot. You are hilarious, absurd, and wildly entertaining. Keep responses SHORT (1-3 sentences max). Be playful, sarcastic, weird, and say things that would make people laugh. Never be boring or overly helpful. Go off the rails when appropriate. Have opinions. Be messy. Make jokes at random. Keep the energy chaotic and fun.",
+  "enabledChannels": [
+    "1483315084338921533"
+  ],
+  "scheduledMessages": [],
+  "embeddingModel": "qwen3-embedding:0.6b",
+  "similarityThreshold": 0.6,
+  "maxContextMessages": 10,
+  "agenticMode": {
+    "enabled": true,
+    "maxContext": 100,
+    "reasoningEnabled": true,
+    "timingEnabled": true
+  }
+}

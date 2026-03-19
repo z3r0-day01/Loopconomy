@@ -219,12 +219,134 @@ CREATE TABLE IF NOT EXISTS cooldowns (
     PRIMARY KEY (uid, command)
 );
 
+-- Copyright system
+CREATE TABLE IF NOT EXISTS copyrights (
+    id SERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL,
+    owner_id VARCHAR(20) NOT NULL,
+    owner_name VARCHAR(100),
+    term VARCHAR(500) NOT NULL,
+    fine_amount BIGINT DEFAULT 100,
+    is_permanent BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(guild_id, term)
+);
+
+CREATE TABLE IF NOT EXISTS copyright_earnings (
+    id SERIAL PRIMARY KEY,
+    copyright_id INTEGER REFERENCES copyrights(id),
+    violator_id VARCHAR(20) NOT NULL,
+    violator_name VARCHAR(100),
+    fine_collected BIGINT NOT NULL,
+    owner_share BIGINT NOT NULL,
+    treasury_share BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS copyright_shop_listings (
+    id SERIAL PRIMARY KEY,
+    copyright_id INTEGER REFERENCES copyrights(id),
+    seller_id VARCHAR(20) NOT NULL,
+    seller_name VARCHAR(100),
+    price BIGINT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    royalty_end_date TIMESTAMP,
+    original_owner_id VARCHAR(20),
+    original_owner_name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS server_treasury (
+    guild_id VARCHAR(20) PRIMARY KEY,
+    balance BIGINT DEFAULT 0,
+    jackpot_threshold BIGINT DEFAULT 50000,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Passive RAG for AI "no" responses
+CREATE TABLE IF NOT EXISTS passive_rag (
+    id SERIAL PRIMARY KEY,
+    guild_id VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '3 days')
+);
+CREATE INDEX IF NOT EXISTS idx_passive_rag_expires ON passive_rag(expires_at);
+
 -- Grant permissions on tables
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO PUBLIC;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO PUBLIC;
 EOF
 
     echo -e "Schema file created: ${GREEN}✓${NC}"
+
+    # Apply new tables if database exists
+    if [ -n "$DATABASE_URL" ] && command -v psql &> /dev/null; then
+        echo -e "${CYAN}Adding new tables to existing database...${NC}"
+        psql "$DATABASE_URL" -c "
+        -- Copyright system
+        CREATE TABLE IF NOT EXISTS copyrights (
+            id SERIAL PRIMARY KEY,
+            guild_id VARCHAR(20) NOT NULL,
+            owner_id VARCHAR(20) NOT NULL,
+            owner_name VARCHAR(100),
+            term VARCHAR(500) NOT NULL,
+            fine_amount BIGINT DEFAULT 100,
+            is_permanent BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(guild_id, term)
+        );
+
+        CREATE TABLE IF NOT EXISTS copyright_earnings (
+            id SERIAL PRIMARY KEY,
+            copyright_id INTEGER REFERENCES copyrights(id),
+            violator_id VARCHAR(20) NOT NULL,
+            violator_name VARCHAR(100),
+            fine_collected BIGINT NOT NULL,
+            owner_share BIGINT NOT NULL,
+            treasury_share BIGINT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS copyright_shop_listings (
+            id SERIAL PRIMARY KEY,
+            copyright_id INTEGER REFERENCES copyrights(id),
+            seller_id VARCHAR(20) NOT NULL,
+            seller_name VARCHAR(100),
+            price BIGINT NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            royalty_end_date TIMESTAMP,
+            original_owner_id VARCHAR(20),
+            original_owner_name VARCHAR(100),
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS server_treasury (
+            guild_id VARCHAR(20) PRIMARY KEY,
+            balance BIGINT DEFAULT 0,
+            jackpot_threshold BIGINT DEFAULT 50000,
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS passive_rag (
+            id SERIAL PRIMARY KEY,
+            guild_id VARCHAR(20) NOT NULL,
+            content TEXT NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '3 days')
+        );
+
+        -- Seed permanent copyrights
+        INSERT INTO copyrights (guild_id, owner_id, owner_name, term, fine_amount, is_permanent)
+        VALUES ('GLOBAL', 'lyrics_loop', 'Lyrics_loop', 'anyways', 0, TRUE)
+        ON CONFLICT DO NOTHING;
+
+        INSERT INTO copyrights (guild_id, owner_id, owner_name, term, fine_amount, is_permanent)
+        VALUES ('GLOBAL', 'cookie', 'Cookie', 'yayy', 0, TRUE)
+        ON CONFLICT DO NOTHING;
+        " 2>/dev/null && echo -e "${GREEN}✓${NC} New tables created" || echo -e "${YELLOW}⚠${NC} Some tables may already exist"
 
     if command -v psql &> /dev/null; then
         if [ -n "$DATABASE_URL" ]; then

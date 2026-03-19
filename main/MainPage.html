@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Loopconomy | EUMI Kernel</title>
+<link rel="icon" type="image/x-icon" href="/ico/favicon.ico">
+<link rel="apple-touch-icon" href="/ico/apple-touch-icon.png">
 
 <style>
 :root {
@@ -11,6 +13,9 @@
     --card: #1e293b;
     --text: #f8fafc;
     --accent: #3b82f6;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
     --grad: linear-gradient(135deg, #2563eb, #9333ea);
 }
 
@@ -22,6 +27,8 @@
     --grad: linear-gradient(135deg, #1e1b4b, #4338ca);
 }
 
+* { box-sizing: border-box; }
+
 body {
     margin: 0;
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -31,7 +38,6 @@ body {
     transition: all 0.3s ease;
 }
 
-/* Toggle Switch */
 .theme-switch {
     position: fixed;
     top: 20px;
@@ -56,11 +62,7 @@ header {
     box-shadow: 0 4px 15px rgba(0,0,0,0.5);
 }
 
-h1 {
-    font-size: 3.5rem;
-    margin: 0;
-    letter-spacing: -1px;
-}
+h1 { font-size: 3.5rem; margin: 0; letter-spacing: -1px; }
 
 .version-badge {
     background: rgba(0,0,0,0.2);
@@ -108,15 +110,9 @@ h1 {
     font-family: 'Courier New', Courier, monospace;
 }
 
-.feature-list li::before {
-    content: "> ";
-    color: var(--accent);
-}
+.feature-list li::before { content: "> "; color: var(--accent); }
 
-.btn-group {
-    text-align: center;
-    margin-top: 20px;
-}
+.btn-group { text-align: center; margin-top: 20px; }
 
 button {
     padding: 14px 24px;
@@ -131,15 +127,241 @@ button {
     transition: transform 0.2s, background 0.2s;
 }
 
-button:hover {
-    background: #2563eb;
-    transform: translateY(-2px);
+button:hover { background: #2563eb; transform: translateY(-2px); }
+button.danger { background: var(--danger); }
+button.success { background: var(--success); }
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
 }
 
-.footer {
+.stat-box {
+    background: rgba(0,0,0,0.3);
+    padding: 15px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.stat-box .value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: var(--accent);
+}
+
+.stat-box .label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.live-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background: var(--success);
+    border-radius: 50%;
+    margin-right: 8px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.5s ease;
+}
+
+.terminal {
+    background: #000;
+    border-radius: 12px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.terminal-input {
+    display: flex;
+    margin-top: 10px;
+}
+
+.terminal-input input {
+    flex: 1;
+    background: #111;
+    border: 1px solid #333;
+    color: #0f0;
+    padding: 10px;
+    border-radius: 8px 0 0 8px;
+    font-family: monospace;
+}
+
+.terminal-input button {
+    margin: 0;
+    border-radius: 0 8px 8px 0;
+    padding: 10px 15px;
+}
+
+.cmd-echo { color: #0ff; }
+.cmd-out { color: #0f0; }
+.cmd-err { color: #f44; }
+
+.accordion {
+    background: rgba(0,0,0,0.2);
+    border-radius: 10px;
+    margin: 10px 0;
+}
+
+.accordion-header {
+    padding: 12px 15px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 10px;
+}
+
+.accordion-header:hover { background: rgba(255,255,255,0.05); }
+
+.accordion-content {
+    display: none;
+    padding: 0 15px 15px;
+}
+
+.accordion.active .accordion-content { display: block; }
+
+.server-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.server-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.cmd-card {
+    background: rgba(0,0,0,0.3);
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin: 5px 0;
+    font-family: monospace;
+    cursor: pointer;
+}
+
+.cmd-card:hover { background: rgba(255,255,255,0.1); }
+
+.cmd-name { color: var(--accent); font-weight: bold; }
+.cmd-desc { font-size: 0.8rem; opacity: 0.7; }
+
+.footer { padding: 40px; font-size: 0.8rem; opacity: 0.6; }
+
+.admin-panel {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 200;
     padding: 40px;
-    font-size: 0.8rem;
-    opacity: 0.6;
+    overflow-y: auto;
+}
+
+.admin-panel.active { display: block; }
+
+.close-admin {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--danger);
+}
+
+.cmd-invite {
+    background: var(--card);
+    padding: 8px 15px;
+    border-radius: 8px;
+    margin: 5px;
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+/* Docs Modal */
+.docs-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 300;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.docs-modal.active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.docs-content {
+    background: var(--card);
+    max-width: 900px;
+    width: 100%;
+    padding: 30px;
+    border-radius: 20px;
+    text-align: left;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.docs-content h1 { color: var(--accent); margin-bottom: 20px; }
+.docs-content h2 { color: var(--accent); margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.docs-content h3 { color: var(--text); margin: 15px 0 10px; }
+.docs-content p { margin: 10px 0; line-height: 1.6; }
+.docs-content code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+.docs-content pre { background: #000; padding: 15px; border-radius: 8px; overflow-x: auto; margin: 15px 0; }
+.docs-content pre code { background: none; padding: 0; }
+.docs-content table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+.docs-content th, .docs-content td { border: 1px solid var(--border); padding: 8px; text-align: left; }
+.docs-content th { background: rgba(0,0,0,0.3); }
+.docs-content ul, .docs-content ol { margin: 10px 0 10px 20px; }
+.docs-content li { margin: 5px 0; }
+.docs-content blockquote { border-left: 3px solid var(--accent); margin: 15px 0; padding-left: 15px; opacity: 0.8; }
+
+.docs-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
 }
 </style>
 </head>
@@ -153,13 +375,42 @@ button:hover {
 <header>
     <h1>🎰 Loopconomy</h1>
     <p>Unified "Firmware" Modification Interface (EUMI)</p>
-    <span class="version-badge">v1.0.0-2b00 [KERNEL v2.5]</span>
+    <span class="version-badge">v1.0.1-r1 [KERNEL v2.6]</span>
 </header>
 
 <div class="container">
 
     <div class="card">
-        <h2>📂 System Profile</h2>
+        <h2>📊 Live Status</h2>
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="value" id="stat-servers">--</div>
+                <div class="label">Servers</div>
+            </div>
+            <div class="stat-box">
+                <div class="value" id="stat-users">--</div>
+                <div class="label">Users</div>
+            </div>
+            <div class="stat-box">
+                <div class="value" id="stat-commands">--</div>
+                <div class="label">Commands</div>
+            </div>
+            <div class="stat-box">
+                <div class="value" id="stat-ping">--</div>
+                <div class="label">Ping (ms)</div>
+            </div>
+        </div>
+        <div style="margin-top: 15px;">
+            <span class="live-indicator"></span>Status: <span id="bot-status">Connecting...</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="ram-bar" style="width: 0%"></div>
+        </div>
+        <small>RAM: <span id="ram-usage">0</span> MB</small>
+    </div>
+
+    <div class="card">
+        <h2>🛠 System Profile</h2>
         <p>
             Loopconomy is a modular Discord Kernel designed for educational exploration of <b>JavaScript</b>, <b>Python</b>, and <b>PostgreSQL</b>.
         </p>
@@ -169,26 +420,51 @@ button:hover {
     </div>
 
     <div class="card">
-        <h2>🛠 Active Modules</h2>
-        <ul class="feature-list">
-            <li>Economy & Check-in System</li>
-            <li>PostgreSQL Currency Persistence</li>
-            <li>Multi-Deck 2-Shoe System</li>
-            <li>EUMI Hot-Reload Engine</li>
-            <li>Anti-Soviet Pipebomb Logic</li>
-            <li>FileSystem Note Encryption</li>
-        </ul>
-    </div>
-
-    <div class="card">
         <h2>🎲 Deployed Games</h2>
         <ul class="feature-list">
             <li>High-Stakes Poker (NLHE, PLO, STUD)</li>
             <li>Blackjack (Casino Pro-Rules)</li>
             <li>Mega Slots (Class-based Multipliers)</li>
             <li>Rigged Coin Flip (10% Variance)</li>
-            <li>Russian Roulette (Mute Penalty) [WIP]</li>
+            <li>Russian Roulette (Mute Penalty)</li>
+            <li>Keno, Bingo, Roulette, Wheel of Fortune</li>
         </ul>
+    </div>
+
+    <div class="card">
+        <h2>🖥 Terminal</h2>
+        <div class="terminal" id="terminal-output">
+            <div class="cmd-out">Loopconomy Terminal v1.0</div>
+            <div class="cmd-out">Type 'help' for commands</div>
+        </div>
+        <div class="terminal-input">
+            <input type="text" id="terminal-input" placeholder="Enter command..." onkeypress="handleTerminal(event)">
+            <button onclick="sendTerminal()">Run</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📋 Slash Commands</h2>
+        <div class="cmd-card" onclick="showCmd('balance')">
+            <span class="cmd-name">/balance</span>
+            <div class="cmd-desc">Check user coin balance</div>
+        </div>
+        <div class="cmd-card" onclick="showCmd('daily')">
+            <span class="cmd-name">/daily</span>
+            <div class="cmd-desc">Claim daily coins</div>
+        </div>
+        <div class="cmd-card" onclick="showCmd('slots')">
+            <span class="cmd-name">/slots</span>
+            <div class="cmd-desc">Play slot machine</div>
+        </div>
+        <div class="cmd-card" onclick="showCmd('coinflip')">
+            <span class="cmd-name">/coinflip</span>
+            <div class="cmd-desc">Flip a coin for coins</div>
+        </div>
+        <div class="cmd-card" onclick="showCmd('leaderboard')">
+            <span class="cmd-name">/leaderboard</span>
+            <div class="cmd-desc">Top 10 richest users</div>
+        </div>
     </div>
 
     <div class="card" style="max-width: 940px;">
@@ -197,7 +473,32 @@ button:hover {
         <div class="btn-group">
             <button onclick="openRepo()">💻 Source Code (GitHub)</button>
             <button onclick="inviteBot()">🚀 Authorize Instance</button>
+            <button class="success" onclick="openAdmin()">⚙️ Admin Panel</button>
+            <button onclick="openDocs()">📖 Documentation</button>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>🛡️ AutoMod</h2>
+        <ul class="feature-list">
+            <li>Spam Detection</li>
+            <li>Link Blocking</li>
+            <li>Capitalization Filter</li>
+            <li>Wordlist Enforcement</li>
+            <li>Anti-Spam Mentions</li>
+            <li>Emoji Limiter</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>🔧 Management Tools</h2>
+        <ul class="feature-list">
+            <li>botstatus - View bot info</li>
+            <li>botlogs - View recent logs</li>
+            <li>botrestart - Restart bot</li>
+            <li>botbackup - Backup database</li>
+            <li>addexistingcoins - Add coins</li>
+        </ul>
     </div>
 
 </div>
@@ -206,37 +507,45 @@ button:hover {
     &copy; 2026 Jenish. Strictly for educational purposes. No real money involved.
 </div>
 
-<div class="card" id="admin-card" style="display: none; border: 1px solid #ef4444;">
-    <h2>📡 Mobile Host Terminal</h2>
-    <div id="status-grid" style="display: grid; grid-template-columns: 1-1; gap: 10px; font-family: monospace;">
-        <div>CPU Temp: <span id="cpu-temp">--</span>°C</div>
-        <div>RAM Use: <span id="ram-usage">--</span>MB</div>
-        <div>Rugplay Ping: <span id="rp-ping">--</span>ms</div>
-        <div>Uptime: <span id="bot-uptime">--</span></div>
+<!-- Documentation Modal -->
+<div class="docs-modal" id="docs-modal">
+    <button class="docs-close" onclick="closeDocs()">✕ Close</button>
+    <div class="docs-content" id="docs-content">
+        <div class="cmd-out">Loading documentation...</div>
+    </div>
+</div>
+
+<!-- Admin Panel Overlay -->
+<div class="admin-panel" id="admin-panel">
+    <button class="close-admin" onclick="closeAdmin()">✕ Close</button>
+    <h2>⚙️ Admin Panel</h2>
+    
+    <div class="card">
+        <h2>📡 Server List</h2>
+        <div class="server-list" id="server-list">
+            <div class="cmd-out">Loading servers...</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🔧 Quick Actions</h2>
+        <div class="btn-group">
+            <button class="success" onclick="adminAction('restart')">🔄 Restart Bot</button>
+            <button class="danger" onclick="adminAction('shutdown')">⛔ Shutdown</button>
+            <button onclick="adminAction('backup')">💾 Backup DB</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📜 System Logs</h2>
+        <div class="terminal" id="admin-logs">
+            <div class="cmd-out">Last 50 log entries...</div>
+        </div>
     </div>
 </div>
 
 <script>
-// Simple logic to show the card if a secret 'admin' URL parameter exists
-if(window.location.search.includes('admin=true')) {
-    document.getElementById('admin-card').style.display = 'block';
-    
-    // Theoretical fetch from your bot's Cloudflare-exposed API
-    setInterval(async () => {
-        try {
-            const res = await fetch('/api/status');
-            const data = await res.json();
-            document.getElementById('cpu-temp').innerText = data.temp;
-            document.getElementById('ram-usage').innerText = data.ram;
-            document.getElementById('rp-ping').innerText = data.ping;
-            document.getElementById('bot-uptime').innerText = data.uptime;
-        } catch(e) { /* Bot is likely offline */ }
-    }, 5000);
-}
-</script>
-    
-
-<script>
+// Theme Toggle
 function toggleTheme() {
     const body = document.body;
     const btn = document.getElementById('theme-toggle');
@@ -249,6 +558,151 @@ function toggleTheme() {
     }
 }
 
+// Open/Close Admin
+function openAdmin() { document.getElementById('admin-panel').classList.add('active'); }
+function closeAdmin() { document.getElementById('admin-panel').classList.remove('active'); }
+
+// Open/Close Docs
+async function openDocs() {
+    const modal = document.getElementById('docs-modal');
+    const content = document.getElementById('docs-content');
+    modal.classList.add('active');
+    
+    try {
+        const res = await fetch('/api/docs');
+        let markdown = await res.text();
+        
+        // Simple markdown to HTML conversion
+        markdown = markdown
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/`(.+?)`/g, '<code>$1</code>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\|(.+)\|/g, (match) => {
+                const cells = match.split('|').filter(c => c.trim());
+                const header = cells.some(c => c.includes('---'));
+                if (header) return '';
+                const row = cells.map(c => `<td>${c.trim()}</td>`).join('');
+                return `<tr>${row}</tr>`;
+            })
+            .replace(/(<tr>.*<\/tr>\n?)+/g, '<table>$&</table>')
+            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+            .replace(/\n/g, '<br>');
+        
+        content.innerHTML = `<div class="docs-scroll">${markdown}</div>`;
+    } catch (e) {
+        content.innerHTML = '<div class="error">Failed to load documentation</div>';
+    }
+}
+
+function closeDocs() { document.getElementById('docs-modal').classList.remove('active'); }
+
+// Terminal
+function addTerminalLine(text, type = 'cmd-out') {
+    const out = document.getElementById('terminal-output');
+    const line = document.createElement('div');
+    line.className = type;
+    line.textContent = '> ' + text;
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+}
+
+function handleTerminal(e) {
+    if (e.key === 'Enter') sendTerminal();
+}
+
+function sendTerminal() {
+    const input = document.getElementById('terminal-input');
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    
+    addTerminalLine(cmd, 'cmd-echo');
+    input.value = '';
+    
+    // Simulated responses
+    const responses = {
+        'help': 'Available: help, status, uptime, clear, ping, servers, users',
+        'status': 'Bot is online and running',
+        'uptime': 'System uptime: ' + document.getElementById('bot-status').textContent,
+        'clear': 'CLEAR',
+        'ping': 'Pong! ' + (document.getElementById('stat-ping').textContent || '?') + 'ms',
+        'servers': 'Connected servers: ' + (document.getElementById('stat-servers').textContent || '?'),
+        'users': 'Cached users: ' + (document.getElementById('stat-users').textContent || '?')
+    };
+    
+    if (cmd === 'clear') {
+        document.getElementById('terminal-output').innerHTML = '';
+    } else if (responses[cmd.toLowerCase()]) {
+        addTerminalLine(responses[cmd.toLowerCase()]);
+    } else {
+        addTerminalLine('Unknown command: ' + cmd, 'cmd-err');
+    }
+}
+
+// Live Status Updates
+async function fetchStatus() {
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        document.getElementById('stat-servers').textContent = data.servers || 0;
+        document.getElementById('stat-users').textContent = data.users || 0;
+        document.getElementById('stat-commands').textContent = data.commands || 0;
+        document.getElementById('stat-ping').textContent = data.ping > 0 ? data.ping : '-';
+        document.getElementById('ram-usage').textContent = data.ram || 0;
+        document.getElementById('stat-uptime').textContent = data.uptime || '0h 0m';
+        document.getElementById('bot-status').textContent = 'ONLINE';
+        document.getElementById('bot-status').style.color = '#22c55e';
+        document.getElementById('status-icon').textContent = '●';
+        document.getElementById('status-icon').style.color = '#22c55e';
+        
+        const ramPercent = Math.min((data.ram / 512) * 100, 100);
+        document.getElementById('ram-bar').style.width = ramPercent + '%';
+    } catch (e) {
+        document.getElementById('bot-status').textContent = 'OFFLINE';
+        document.getElementById('bot-status').style.color = '#ef4444';
+        document.getElementById('status-icon').textContent = '●';
+        document.getElementById('status-icon').style.color = '#ef4444';
+    }
+}
+
+// Admin Actions
+async function adminAction(action) {
+    if (action === 'stop' && !confirm('Stop the bot? You will need to manually restart it.')) return;
+    if (action === 'restart' && !confirm('Restart the bot?')) return;
+    
+    try {
+        const res = await fetch('/api/shell/' + action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}'
+        });
+        const data = await res.json();
+        alert(data.message || data.error || 'Command sent');
+        
+        if (action === 'stop') {
+            document.getElementById('bot-status').textContent = 'STOPPED';
+            document.getElementById('bot-status').style.color = '#ef4444';
+        } else if (action === 'restart') {
+            document.getElementById('bot-status').textContent = 'RESTARTING...';
+            setTimeout(fetchStatus, 3000);
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+// Show Command
+function showCmd(cmd) {
+    alert('/' + cmd + ' - Use this command in Discord!');
+}
+
+// External Links
 function openRepo() {
     window.open("https://github.com/Jenishpr100/Loopconomy", "_blank");
 }
@@ -256,6 +710,10 @@ function openRepo() {
 function inviteBot() {
     window.open("https://discord.com/oauth2/authorize?client_id=1483310425050320917&permissions=0&integration_type=0&scope=bot+applications.commands", "_blank");
 }
+
+// Start polling
+fetchStatus();
+setInterval(fetchStatus, 5000);
 </script>
 
 </body>

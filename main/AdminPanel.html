@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LOOP mgmtsh</title>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg2: #12121a;
+            --border: #2a2a3a;
+            --text: #abb2bf;
+            --text-bright: #e0e0e0;
+            --text-dim: #5c6370;
+            --magenta: #c678dd;
+            --green: #98c379;
+            --cyan: #56b6c2;
+            --yellow: #e5c07b;
+            --red: #e06c75;
+            --orange: #d19a66;
+            --prompt: #98c379;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        /* Mobile detection */
+        @media (max-width: 768px) {
+            body { font-size: 12px; }
+            .sidebar { width: 100% !important; height: auto !important; flex-direction: row !important; flex-wrap: wrap; }
+            .sidebar-section { flex: 1; min-width: 120px; }
+            .main { flex-direction: column !important; }
+            .terminal-input { width: 70% !important; }
+            button { padding: 10px 14px !important; min-height: 44px; }
+        }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: var(--bg);
+        }
+
+        .login-box {
+            background: var(--bg2);
+            border: 2px solid var(--magenta);
+            padding: 30px;
+            width: 350px;
+            text-align: center;
+        }
+
+        .login-title {
+            color: var(--magenta);
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        .login-input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text-bright);
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--magenta);
+            border: none;
+            color: var(--bg);
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .login-error {
+            color: var(--red);
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        /* Main App */
+        .app { display: none; height: 100vh; flex-direction: column; }
+        .app.active { display: flex; }
+
+        /* Header */
+        .header {
+            background: var(--bg2);
+            border-bottom: 2px solid var(--magenta);
+            padding: 8px 16px;
+            flex-shrink: 0;
+        }
+
+        .header-border-top {
+            color: var(--magenta);
+            font-size: 12px;
+            white-space: pre;
+            overflow: hidden;
+        }
+
+        .header-content {
+            color: var(--magenta);
+            font-weight: bold;
+            padding: 4px 0;
+        }
+
+        .header-border-bottom {
+            color: var(--magenta);
+            font-size: 12px;
+            white-space: pre;
+            overflow: hidden;
+        }
+
+        /* Main Area */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 180px;
+            background: var(--bg2);
+            border-right: 1px solid var(--border);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .sidebar-section { margin-bottom: 16px; }
+        .sidebar-title {
+            color: var(--text-dim);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .sidebar-btn {
+            display: block;
+            width: 100%;
+            padding: 8px 10px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text);
+            text-align: left;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 2px;
+            font-family: inherit;
+        }
+
+        .sidebar-btn:hover { background: var(--border); }
+        .sidebar-btn.active { background: var(--magenta); color: var(--bg); }
+        .sidebar-btn.danger:hover { background: var(--red); color: var(--bg); }
+
+        /* Terminal */
+        .terminal-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .terminal {
+            flex: 1;
+            background: var(--bg);
+            padding: 12px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .line { margin-bottom: 2px; word-wrap: break-word; }
+        .line.cmd { color: var(--cyan); }
+        .line.output { color: var(--text-bright); }
+        .line.error { color: var(--red); }
+        .line.success { color: var(--green); }
+        .line.info { color: var(--text-dim); }
+        .line.header { color: var(--magenta); font-weight: bold; }
+
+        /* Input Area */
+        .input-area {
+            background: var(--bg2);
+            border-top: 1px solid var(--border);
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .prompt {
+            color: var(--prompt);
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .prompt.server { color: var(--orange); }
+
+        .terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-bright);
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .terminal-input::placeholder { color: var(--text-dim); }
+
+        /* Status bar */
+        .status-bar {
+            background: var(--bg2);
+            border-top: 1px solid var(--border);
+            padding: 6px 12px;
+            font-size: 11px;
+            color: var(--text-dim);
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        /* Logs/Stats panels */
+        .panel {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel.active { display: flex; }
+
+        .panel-header {
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-size: 12px;
+            background: var(--bg);
+        }
+
+        /* Server mode */
+        .server-mode .sidebar { border-right-color: var(--orange); }
+        .server-mode .header { border-bottom-color: var(--orange); }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-screen" id="login-screen">
+        <div class="login-box">
+            <div class="login-title">╔═══════════════════════╗
+║  LOOP mgmtsh      ║
+╚═══════════════════════╝</div>
+            <input type="text" id="username" class="login-input" placeholder="Username" autocomplete="off">
+            <input type="password" id="password" class="login-input" placeholder="Password">
+            <button class="login-btn" onclick="doLogin()">Login</button>
+            <div class="login-error" id="login-error"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app" id="app">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-border-top" id="header-top">╔══════════════════════════════════════════════════════════════════════════════════════════════╗</div>
+            <div class="header-content" id="header-content">║  Uptime: --   Status: ● CONNECTING   Servers: 0                                               ║</div>
+            <div class="header-border-bottom" id="header-bottom">╚══════════════════════════════════════════════════════════════════════════════════════════════╝</div>
+        </div>
+
+        <!-- Main Area -->
+        <div class="main">
+            <!-- Sidebar -->
+            <div class="sidebar" id="sidebar">
+                <div class="sidebar-section" id="sidebar-main">
+                    <div class="sidebar-title">Shell</div>
+                    <button class="sidebar-btn active" onclick="setView('console')">Console</button>
+                    <button class="sidebar-btn" onclick="setView('logs')">Logs</button>
+                    <button class="sidebar-btn" onclick="setView('stats')">Stats</button>
+                    <button class="sidebar-btn" onclick="setView('servers')">Servers</button>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Control</div>
+                    <button class="sidebar-btn" onclick="sendCmd('restart')">Restart</button>
+                    <button class="sidebar-btn" onclick="sendCmd('stop')">Stop</button>
+                    <button class="sidebar-btn" onclick="sendCmd('start')">Start</button>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Quick</div>
+                    <button class="sidebar-btn" onclick="quickCmd('say')">Say</button>
+                    <button class="sidebar-btn" onclick="quickCmd('broadcast')">Broadcast</button>
+                    <button class="sidebar-btn" onclick="quickCmd('status')">Status</button>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Account</div>
+                    <button class="sidebar-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
+
+            <!-- Panels -->
+            <div class="terminal-container">
+                <!-- Console -->
+                <div class="panel active" id="panel-console">
+                    <div class="terminal" id="terminal"></div>
+                    <div class="input-area">
+                        <span class="prompt" id="prompt">LOOP(00:00): </span>
+                        <input type="text" class="terminal-input" id="input" placeholder="Type command..." autocomplete="off">
+                    </div>
+                </div>
+
+                <!-- Logs -->
+                <div class="panel" id="panel-logs">
+                    <div class="panel-header">System Logs (last 50 lines)</div>
+                    <div class="panel-content" id="logs-content"></div>
+                    <div class="input-area">
+                        <span class="prompt">Logs> </span>
+                        <button class="sidebar-btn" onclick="loadLogs()">Refresh</button>
+                        <button class="sidebar-btn" onclick="setView('console')">Back</button>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="panel" id="panel-stats">
+                    <div class="panel-header">Bot Statistics</div>
+                    <div class="panel-content" id="stats-content"></div>
+                    <div class="input-area">
+                        <button class="sidebar-btn" onclick="loadStats()">Refresh</button>
+                        <button class="sidebar-btn" onclick="setView('console')">Back</button>
+                    </div>
+                </div>
+
+                <!-- Servers -->
+                <div class="panel" id="panel-servers">
+                    <div class="panel-header">Connected Servers</div>
+                    <div class="panel-content" id="servers-content"></div>
+                    <div class="input-area">
+                        <span class="prompt">Servers> </span>
+                        <input type="text" class="terminal-input" id="server-select" placeholder="Server name or ID..." style="width: 200px;">
+                        <button class="sidebar-btn" onclick="selectServer()">Select</button>
+                        <button class="sidebar-btn" onclick="loadServers()">Refresh</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span id="status-left">[Tab]=complete [↑↓]=history [Enter]=run [Ctrl+C]=exit</span>
+            <span id="status-right">LOOP mgmtsh v1.0</span>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let auth = null;
+        let mode = 'main';
+        let currentServer = '';
+        let history = [];
+        let historyPos = -1;
+        let clockInterval;
+        
+        const COMMANDS_MAIN = ['start', 'stop', 'restart', 'status', 'logs', 'say', 'broadcast', 'add', 'remove', 'balance', 'interface', 'settings', 'history', 'clear', 'help', 'exit', 'logout'];
+        const COMMANDS_SERVER = ['/say', '/broadcast', '/mute', '/unmute', '/ai-toggle', '/blackjack', '/poker', '/slots', '/balance', '/back', '/clear', '/help'];
+
+        // Init
+        window.onload = function() {
+            loadCredentials();
+            startClock();
+            setupInput();
+        };
+
+        function loadCredentials() {
+            const saved = localStorage.getItem('loop_auth');
+            if (saved) {
+                auth = JSON.parse(saved);
+                showApp();
+            }
+        }
+
+        function saveCredentials() {
+            localStorage.setItem('loop_auth', JSON.stringify(auth));
+        }
+
+        async         function doLogin() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            document.getElementById('login-error').textContent = '';
+            
+            // Store credentials for API calls
+            auth = { username: u, password: p };
+            saveCredentials();
+            showApp();
+        }
+
+        function logout() {
+            localStorage.removeItem('loop_auth');
+            auth = null;
+            mode = 'main';
+            currentServer = '';
+            document.getElementById('login-screen').style.display = 'flex';
+            document.getElementById('app').classList.remove('active');
+            document.getElementById('app').classList.remove('server-mode');
+            clearInterval(clockInterval);
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('app').classList.add('active');
+            updatePrompt();
+            fetchStatus();
+            loadServers();
+            setInterval(fetchStatus, 5000);
+        }
+
+        function startClock() {
+            clockInterval = setInterval(updateClock, 1000);
+            updateClock();
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            const prompt = document.getElementById('prompt');
+            if (prompt) {
+                prompt.textContent = mode === 'server' ? `${auth?.username || 'admin'}@${currentServer}> ` : `LOOP(${time}): `;
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                const running = data.servers > 0;
+                const statusText = running ? '● RUNNING' : '● STOPPED';
+                const statusColor = running ? 'var(--green)' : 'var(--red)';
+                
+                const uptime = data.uptime || '--';
+                const servers = data.servers || 0;
+                
+                document.getElementById('header-content').innerHTML = 
+                    `║  Uptime: ${uptime}   Status: <span style="color:${statusColor}">${statusText}</span>   Servers: ${servers}                                               ║`;
+            } catch (e) {
+                document.getElementById('header-content').innerHTML = 
+                    '║  Uptime: --   Status: <span style="color:var(--red)">● OFFLINE</span>   Servers: 0                                               ║';
+            }
+        }
+
+        function updatePrompt() {
+            const now = new Date();
+            const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            const prompt = document.getElementById('prompt');
+            
+            if (mode === 'server') {
+                prompt.className = 'prompt server';
+                prompt.textContent = `${auth?.username || 'admin'}@${currentServer}> `;
+            } else {
+                prompt.className = 'prompt';
+                prompt.textContent = `LOOP(${time}): `;
+            }
+        }
+
+        // Views
+        function setView(view) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(`panel-${view}`).classList.add('active');
+            
+            const btns = document.querySelectorAll(`#panel-${view} .sidebar-btn, .sidebar-section .sidebar-btn`);
+            
+            if (view === 'logs') {
+                loadLogs();
+            } else if (view === 'stats') {
+                loadStats();
+            } else if (view === 'servers') {
+                loadServers();
+            }
+            
+            document.getElementById('input').focus();
+        }
+
+        function loadLogs() {
+            fetch('/api/shell/logs', {
+                headers: { 'Authorization': 'Basic ' + btoa((auth?.username||'') + ':' + (auth?.password||'')) }
+            }).then(r => r.json()).then(data => {
+                const lines = (data.logs || 'No logs').split('\n').slice(-50);
+                document.getElementById('logs-content').innerHTML = lines.map(l => 
+                    `<div class="line ${l.includes('ERROR') ? 'error' : l.includes('warn') ? 'warning' : ''}">${escapeHtml(l)}</div>`
+                ).join('');
+            }).catch(() => {
+                document.getElementById('logs-content').innerHTML = '<div class="line error">Failed to load logs</div>';
+            });
+        }
+
+        function loadStats() {
+            fetch('/api/status').then(r => r.json()).then(data => {
+                document.getElementById('stats-content').innerHTML = `
+                    <div class="line header">═══ Bot Statistics ═══</div>
+                    <div class="line">Servers: ${data.servers || 0}</div>
+                    <div class="line">Users: ${data.users || 0}</div>
+                    <div class="line">Commands: ${data.commands || 0}</div>
+                    <div class="line">Uptime: ${data.uptime || '--'}</div>
+                    <div class="line">Ping: ${data.ping || 0}ms</div>
+                    <div class="line">RAM: ${data.ram || 0}MB</div>
+                `;
+            });
+        }
+
+        function loadServers() {
+            fetch('/api/shell/servers', {
+                headers: { 'Authorization': 'Basic ' + btoa((auth?.username||'') + ':' + (auth?.password||'')) }
+            }).then(r => r.json()).then(data => {
+                const servers = data.servers || [];
+                if (servers.length === 0) {
+                    document.getElementById('servers-content').innerHTML = '<div class="line info">No servers found</div>';
+                    return;
+                }
+                document.getElementById('servers-content').innerHTML = `
+                    <div class="line header">═══ Connected Servers ═══</div>
+                    ${servers.map(s => `<div class="line">• ${escapeHtml(s.name)} (${s.memberCount} members, ID: ${s.id})</div>`).join('')}
+                `;
+            });
+        }
+
+        function selectServer() {
+            const name = document.getElementById('server-select').value.trim();
+            if (!name) return;
+            
+            fetch('/api/shell/servers', {
+                headers: { 'Authorization': 'Basic ' + btoa((auth?.username||'') + ':' + (auth?.password||'')) }
+            }).then(r => r.json()).then(data => {
+                const servers = data.servers || [];
+                const found = servers.find(s => s.name.toLowerCase() === name.toLowerCase() || s.id === name);
+                
+                if (found) {
+                    currentServer = found.name;
+                    mode = 'server';
+                    document.getElementById('app').classList.add('server-mode');
+                    updatePrompt();
+                    print(`Switched to server: ${found.name}`, 'success');
+                    setView('console');
+                } else {
+                    print(`Server not found: ${name}`, 'error');
+                }
+            });
+        }
+
+        // Input handling
+        function setupInput() {
+            const input = document.getElementById('input');
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const cmd = input.value.trim();
+                    if (cmd) {
+                        handleCommand(cmd);
+                        history.push(cmd);
+                        historyPos = history.length;
+                        input.value = '';
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (historyPos > 0) {
+                        historyPos--;
+                        input.value = history[historyPos];
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (historyPos < history.length - 1) {
+                        historyPos++;
+                        input.value = history[historyPos];
+                    } else {
+                        historyPos = history.length;
+                        input.value = '';
+                    }
+                } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    autoComplete(input);
+                } else if (e.key === 'c' && e.ctrlKey) {
+                    input.value = '';
+                    print('^C', 'info');
+                } else if (e.key === 'l' && e.ctrlKey) {
+                    document.getElementById('terminal').innerHTML = '';
+                }
+            });
+        }
+
+        function autoComplete(input) {
+            const cmds = mode === 'server' ? COMMANDS_SERVER : COMMANDS_MAIN;
+            const val = input.value.toLowerCase();
+            const matches = cmds.filter(c => c.startsWith(val));
+            
+            if (matches.length === 1) {
+                input.value = matches[0] + ' ';
+            } else if (matches.length > 1) {
+                print(matches.join('  '), 'info');
+            }
+        }
+
+        async function handleCommand(cmd) {
+            print(cmd, 'cmd');
+            
+            if (mode === 'server') {
+                if (cmd === 'back') {
+                    mode = 'main';
+                    currentServer = '';
+                    document.getElementById('app').classList.remove('server-mode');
+                    updatePrompt();
+                    print('Returned to main mode', 'info');
+                    return;
+                }
+                // Server commands would be sent via API
+                print('Server command: ' + cmd, 'info');
+                return;
+            }
+            
+            const parts = cmd.split(' ');
+            const c = parts[0].toLowerCase();
+            const args = parts.slice(1).join(' ');
+            
+            switch (c) {
+                case 'help':
+                    print('═══ Commands ═══', 'header');
+                    print('start/stop/restart - Bot control', 'info');
+                    print('status - Bot status', 'info');
+                    print('logs [n] - View logs', 'info');
+                    print('say #channel msg - Send message', 'info');
+                    print('broadcast msg - Broadcast to all', 'info');
+                    print('add @user amount - Add coins', 'info');
+                    print('remove @user amount - Remove coins', 'info');
+                    print('balance [@user] - Check balance', 'info');
+                    print('interface - List servers', 'info');
+                    print('interface <name> - Switch to server mode', 'info');
+                    print('clear - Clear terminal', 'info');
+                    print('history - Show history', 'info');
+                    print('exit/logout - Logout', 'info');
+                    break;
+                    
+                case 'clear':
+                    document.getElementById('terminal').innerHTML = '';
+                    break;
+                    
+                case 'history':
+                    history.forEach((h, i) => print(`${i+1}. ${h}`, 'info'));
+                    break;
+                    
+                case 'status':
+                    fetchStatus();
+                    print('Status updated', 'info');
+                    break;
+                    
+                case 'logs':
+                    loadLogs();
+                    setView('logs');
+                    break;
+                    
+                case 'start':
+                case 'stop':
+                case 'restart':
+                    await apiCmd(c);
+                    break;
+                    
+                case 'interface':
+                    if (args) {
+                        document.getElementById('server-select').value = args;
+                        selectServer();
+                    } else {
+                        loadServers();
+                        setView('servers');
+                    }
+                    break;
+                    
+                case 'say':
+                    const sayArgs = cmd.match(/^say\s+#?(\S+)\s+(.+)$/);
+                    if (sayArgs) {
+                        await apiCmd('say', { channel: sayArgs[1], message: sayArgs[2] });
+                    } else {
+                        print('Usage: say #channel message', 'error');
+                    }
+                    break;
+                    
+                case 'broadcast':
+                    if (args) {
+                        await apiCmd('broadcast', { message: args });
+                    } else {
+                        print('Usage: broadcast <message>', 'error');
+                    }
+                    break;
+                    
+                case 'add':
+                    const addArgs = cmd.match(/^add\s+<@!?(\d+)>\s+(\d+)$/);
+                    if (addArgs) {
+                        await apiCmd('addcoins', { user: addArgs[1], amount: parseInt(addArgs[2]) });
+                    } else {
+                        print('Usage: add @user amount', 'error');
+                    }
+                    break;
+                    
+                case 'balance':
+                    const balArgs = cmd.match(/^balance\s+<@!?(\d+)>$/);
+                    if (balArgs) {
+                        await apiCmd('balance', { user: balArgs[1] });
+                    } else {
+                        print('Usage: balance @user', 'error');
+                    }
+                    break;
+                    
+                case 'exit':
+                case 'logout':
+                    logout();
+                    break;
+                    
+                default:
+                    print(`Unknown command: ${c}. Type 'help' for commands.`, 'error');
+            }
+        }
+
+        async function sendCmd(cmd) {
+            print(cmd, 'cmd');
+            await apiCmd(cmd);
+        }
+
+        async function quickCmd(cmd) {
+            if (cmd === 'status') {
+                handleCommand('status');
+            } else if (cmd === 'say') {
+                const msg = prompt('Channel and message (e.g., #general hello):');
+                if (msg) handleCommand('say ' + msg);
+            } else if (cmd === 'broadcast') {
+                const msg = prompt('Broadcast message:');
+                if (msg) handleCommand('broadcast ' + msg);
+            }
+        }
+
+        async function apiCmd(endpoint, data = {}) {
+            try {
+                const resp = await fetch(`/api/shell/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa((auth?.username||'') + ':' + (auth?.password||''))
+                    },
+                    body: JSON.stringify(data)
+                });
+                const result = await resp.json();
+                
+                if (resp.status === 401) {
+                    print('Unauthorized - check credentials', 'error');
+                    return;
+                }
+                
+                if (result.error) {
+                    print(result.error, 'error');
+                } else if (result.message) {
+                    print(result.message, 'success');
+                } else {
+                    print(JSON.stringify(result), 'output');
+                }
+            } catch (e) {
+                print('API error: ' + e.message, 'error');
+            }
+        }
+
+        function print(text, type = 'output') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = `line ${type}`;
+            line.textContent = text;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
