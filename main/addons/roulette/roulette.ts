@@ -34,6 +34,24 @@ function spinWheel(): { number: number; color: string; parity: string; range: st
     return { number, color, parity, range, dozen, column };
 }
 
+function getWheelVisual(result: { number: number; color: string }): string {
+    const colorEmoji = result.color === 'red' ? '🔴' : result.color === 'black' ? '⚫' : '🟢';
+    return `
+╔═══════════════════════════════════════╗
+║           🎰 ROULETTE WHEEL 🎰        ║
+╠═══════════════════════════════════════╣
+║                                       ║
+║         ╭─────────────────╮           ║
+║         │                 │           ║
+║         │    **${String(result.number).padStart(2, ' ')}**  ${colorEmoji}    │           ║
+║         │                 │           ║
+║         ╰─────────────────╯           ║
+║                                       ║
+║     ${result.color === 'red' ? '🔴 RED' : result.color === 'black' ? '⚫ BLACK' : '🟢 GREEN'}                              ║
+║                                       ║
+╚═══════════════════════════════════════╝`;
+}
+
 export const commands = [
     {
         data: new SlashCommandBuilder()
@@ -49,16 +67,16 @@ export const commands = [
                     .setDescription('Type of bet')
                     .setRequired(true)
                     .addChoices(
-                        { name: 'Red', value: 'red' },
-                        { name: 'Black', value: 'black' },
-                        { name: 'Even', value: 'even' },
-                        { name: 'Odd', value: 'odd' },
-                        { name: '1-18 (Low)', value: '1-18' },
-                        { name: '19-36 (High)', value: '19-36' },
-                        { name: 'Dozen 1 (1-12)', value: 'dozen1' },
-                        { name: 'Dozen 2 (13-24)', value: 'dozen2' },
-                        { name: 'Dozen 3 (25-36)', value: 'dozen3' },
-                        { name: 'Straight (single)', value: 'straight' }
+                        { name: '🔴 Red', value: 'red' },
+                        { name: '⚫ Black', value: 'black' },
+                        { name: '🔢 Even', value: 'even' },
+                        { name: '🔠 Odd', value: 'odd' },
+                        { name: '1️⃣8️⃣ 1-18 (Low)', value: '1-18' },
+                        { name: '1️⃣9️⃣6️⃣ 19-36 (High)', value: '19-36' },
+                        { name: '📊 Dozen 1 (1-12)', value: 'dozen1' },
+                        { name: '📊 Dozen 2 (13-24)', value: 'dozen2' },
+                        { name: '📊 Dozen 3 (25-36)', value: 'dozen3' },
+                        { name: '🎯 Straight (single number)', value: 'straight' }
                     )
             )
             .addIntegerOption(opt =>
@@ -72,16 +90,20 @@ export const commands = [
             const number = interaction.options.getInteger('number');
 
             if (bet <= 0) {
-                return interaction.reply({ content: 'Please enter a valid bet.', ephemeral: true });
+                return interaction.reply({ content: '❌ Please enter a valid bet.', ephemeral: true });
             }
 
             if (betType === 'straight' && (number < 0 || number > 36)) {
-                return interaction.reply({ content: 'Please enter a valid number (0-36).', ephemeral: true });
+                return interaction.reply({ content: '❌ Please enter a valid number (0-36).', ephemeral: true });
+            }
+
+            if (betType === 'straight' && number === undefined) {
+                return interaction.reply({ content: '❌ Please specify a number for straight bet.', ephemeral: true });
             }
 
             const balance = await api.getBalance(interaction.user.id);
             if (balance < bet) {
-                return interaction.reply({ content: `Insufficient funds. Balance: ${balance}`, ephemeral: true });
+                return interaction.reply({ content: `❌ Insufficient funds. Balance: ${balance.toLocaleString()} coins`, ephemeral: true });
             }
 
             await api.subCoins(interaction.user.id, bet);
@@ -117,20 +139,33 @@ export const commands = [
 
             const newBalance = await api.getBalance(interaction.user.id);
 
-            const colorHex = result.color === 'red' ? '#FF0000' : result.color === 'black' ? '#000000' : '#00FF00';
+            const colorHex = result.color === 'red' ? '#FF0000' : result.color === 'black' ? '#333333' : '#00FF00';
+            const betTypeDisplay = betType === 'straight' ? `🎯 ${number}` : 
+                                  betType === 'red' ? '🔴 Red' :
+                                  betType === 'black' ? '⚫ Black' :
+                                  betType === 'even' ? '🔢 Even' :
+                                  betType === 'odd' ? '🔠 Odd' :
+                                  betType === '1-18' ? '1️⃣8️⃣ Low' :
+                                  betType === '19-36' ? '1️⃣9️⃣6️⃣ High' :
+                                  betType === 'dozen1' ? '📊 Dozen 1 (1-12)' :
+                                  betType === 'dozen2' ? '📊 Dozen 2 (13-24)' :
+                                  betType === 'dozen3' ? '📊 Dozen 3 (25-36)' :
+                                  betType;
 
             const embed = new EmbedBuilder()
-                .setTitle('🎡 Roulette')
+                .setTitle('🎡 Roulette Results')
                 .setColor(won ? '#00FF00' : '#FF0000')
                 .setThumbnail(interaction.user.displayAvatarURL())
                 .addFields(
-                    { name: '🎰 Result', value: `**${result.number}** (${result.color})`, inline: true },
-                    { name: '🎯 Your Bet', value: `${betType}${number ? ` (${number})` : ''}`, inline: true },
-                    { name: '💰 Bet', value: bet.toLocaleString(), inline: true },
+                    { name: '🎰 Result', value: `**${result.number}** ${result.color === 'red' ? '🔴' : result.color === 'black' ? '⚫' : '🟢'}`, inline: true },
+                    { name: '🎯 Your Bet', value: betTypeDisplay, inline: true },
+                    { name: '📈 Payout', value: `**${betInfo.payout + 1}x**`, inline: true },
+                    { name: '💰 Wagered', value: bet.toLocaleString(), inline: true },
                     { name: won ? '🎉 Won' : '❌ Lost', value: winAmount.toLocaleString(), inline: true },
                     { name: '💳 Balance', value: newBalance.toLocaleString(), inline: true }
                 )
-                .setFooter({ text: won ? `You won ${betInfo.payout}x!` : 'Better luck next time!' });
+                .setDescription(`\`\`\`\n${getWheelVisual(result)}\n\`\`\`\n${won ? '🎉 **WINNER!**' : '💀 Better luck next time!'}`)
+                .setFooter({ text: won ? `You won ${betInfo.payout}x your bet!` : 'Place your bets...' });
 
             await interaction.reply({ embeds: [embed] });
         }

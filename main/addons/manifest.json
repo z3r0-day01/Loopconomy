@@ -1,59 +1,70 @@
 {
     "addons": {
-        "blackjack": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["blackjack"] 
+        "blackjack": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["blackjack"]
         },
-        "poker": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["poker"] 
+        "poker": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["poker"]
         },
-        "gambling": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["daily", "coinflip", "slots"] 
+        "gambling": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["slots"]
         },
-        "keno": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["keno"] 
+        "keno": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["keno"]
         },
-        "roulette": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["roulette"] 
+        "roulette": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["roulette"]
         },
-        "bingo": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["bingo"] 
+        "bingo": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["bingo"]
         },
-        "wheelo": { 
-            "enabled": true, 
-            "trustLevel": 2, 
-            "commandList": ["wheel"] 
+        "wheelo": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["wheel"]
         },
-        "russianroulette": { 
-            "enabled": true, 
-            "trustLevel": 3, 
-            "commandList": ["russianroulette"] 
+        "russianroulette": {
+            "enabled": true,
+            "trustLevel": 3,
+            "commandList": ["russianroulette"]
         },
-        "automod": { 
-            "enabled": true, 
-            "trustLevel": 3, 
-            "commandList": ["automod"] 
+        "automod": {
+            "enabled": true,
+            "trustLevel": 3,
+            "commandList": ["automod"]
         },
-        "copyright": { 
-            "enabled": true, 
-            "trustLevel": 3, 
-            "commandList": ["copyright"] 
+        "copyright": {
+            "enabled": true,
+            "trustLevel": 3,
+            "commandList": ["copyright"]
         },
-        "management": { 
-            "enabled": true, 
-            "trustLevel": 5, 
-            "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup"] 
+        "shop": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["shop"]
+        },
+        "management": {
+            "enabled": true,
+            "trustLevel": 5,
+            "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup", "botstart", "adminlist", "addexistingcoins"]
+        },
+        "ai": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["ai", "ai-toggle", "ai-model", "ai-manage", "ai-agentic", "ai-schedule", "ai-rag", "ai-logs", "ai-help"]
         }
     }
 }
+

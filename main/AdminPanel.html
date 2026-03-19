@@ -125,6 +125,32 @@
             overflow: hidden;
         }
 
+        .server-mode .header-border-top,
+        .server-mode .header-border-bottom {
+            color: var(--orange);
+        }
+
+        .server-mode .header {
+            border-bottom-color: var(--orange);
+        }
+
+        .server-mode-indicator {
+            display: none;
+            background: var(--orange);
+            color: var(--bg);
+            padding: 8px 16px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .server-mode .server-mode-indicator {
+            display: block;
+        }
+
+        .server-mode .sidebar {
+            border-right-color: var(--orange);
+        }
+
         /* Main Area */
         .main {
             flex: 1;
@@ -292,6 +318,9 @@
         <!-- Header -->
         <div class="header">
             <div class="header-border-top" id="header-top">╔══════════════════════════════════════════════════════════════════════════════════════════════╗</div>
+            <div class="server-mode-indicator" id="server-mode-indicator">
+                🔸 SERVER MODE: <span id="server-mode-name">Unknown</span> | Type "back" or "exit" to return to main mode
+            </div>
             <div class="header-content" id="header-content">║  Uptime: --   Status: ● CONNECTING   Servers: 0                                               ║</div>
             <div class="header-border-bottom" id="header-bottom">╚══════════════════════════════════════════════════════════════════════════════════════════════╝</div>
         </div>
@@ -388,7 +417,7 @@
         let clockInterval;
         
         const COMMANDS_MAIN = ['start', 'stop', 'restart', 'status', 'logs', 'say', 'broadcast', 'add', 'remove', 'balance', 'interface', 'settings', 'history', 'clear', 'help', 'exit', 'logout'];
-        const COMMANDS_SERVER = ['/say', '/broadcast', '/mute', '/unmute', '/ai-toggle', '/blackjack', '/poker', '/slots', '/balance', '/back', '/clear', '/help'];
+        const COMMANDS_SERVER = ['say', 'broadcast', 'mute', 'unmute', 'kick', 'ban', 'warn', 'slots', 'roulette', 'blackjack', 'poker', 'keno', 'bingo', 'wheel', 'balance', 'ai', 'ai-toggle', 'ai-help', 'copyright', 'shop', 'status', 'info', 'back', 'exit', 'logout', 'clear', 'help'];
 
         // Init
         window.onload = function() {
@@ -470,6 +499,25 @@
             } catch (e) {
                 document.getElementById('header-content').innerHTML = 
                     '║  Uptime: --   Status: <span style="color:var(--red)">● OFFLINE</span>   Servers: 0                                               ║';
+            }
+        }
+
+        async function printStatus() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                const running = data.servers > 0;
+                
+                print('═══ Bot Status ═══', 'header');
+                print(`Status: ${running ? '● RUNNING' : '● STOPPED'}`, running ? 'success' : 'error');
+                print(`Uptime: ${data.uptime || '--'}`, 'output');
+                print(`Servers: ${data.servers || 0}`, 'output');
+                print(`Users: ${data.users || 0}`, 'output');
+                print(`Ping: ${data.ping || 0}ms`, 'output');
+                print(`RAM: ${data.ram || 0}MB`, 'output');
+                print(`Commands: ${data.commands || 0}`, 'output');
+            } catch (e) {
+                print('Failed to fetch status', 'error');
             }
         }
 
@@ -564,8 +612,10 @@
                     currentServer = found.name;
                     mode = 'server';
                     document.getElementById('app').classList.add('server-mode');
+                    document.getElementById('server-mode-name').textContent = found.name;
                     updatePrompt();
                     print(`Switched to server: ${found.name}`, 'success');
+                    print('Type "back" or "exit" to return to main mode', 'info');
                     setView('console');
                 } else {
                     print(`Server not found: ${name}`, 'error');
@@ -629,10 +679,11 @@
             print(cmd, 'cmd');
             
             if (mode === 'server') {
-                if (cmd === 'back') {
+                if (cmd === 'back' || cmd === 'exit' || cmd === 'logout') {
                     mode = 'main';
                     currentServer = '';
                     document.getElementById('app').classList.remove('server-mode');
+                    document.getElementById('server-mode-name').textContent = '';
                     updatePrompt();
                     print('Returned to main mode', 'info');
                     return;
@@ -673,8 +724,7 @@
                     break;
                     
                 case 'status':
-                    fetchStatus();
-                    print('Status updated', 'info');
+                    await printStatus();
                     break;
                     
                 case 'logs':

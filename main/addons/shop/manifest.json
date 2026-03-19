@@ -1,0 +1,9 @@
+{
+    "name": "Shop Marketplace",
+    "description": "Extensible marketplace for buying and selling items",
+    "version": "1.0.0",
+    "entry": "shop.ts",
+    "trustLevel": 2,
+    "commandList": ["shop"],
+    "itemTypes": ["copyright"]
+}
