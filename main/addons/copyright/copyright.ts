@@ -250,6 +250,31 @@ export const commands = [
             .addSubcommand(sub =>
                 sub.setName('treasury')
                     .setDescription('View server treasury (jackpot pool)')
+            )
+            .addSubcommand(sub =>
+                sub.setName('smartclaim')
+                    .setDescription('Configure smart copyright detection')
+                    .addStringOption(opt =>
+                        opt.setName('action')
+                            .setDescription('Action')
+                            .setRequired(true)
+                            .addChoices(
+                                { name: 'Enable', value: 'enable' },
+                                { name: 'Disable', value: 'disable' },
+                                { name: 'RAG Enable', value: 'rag-enable' },
+                                { name: 'RAG Disable', value: 'rag-disable' },
+                                { name: 'Embeddings Enable', value: 'embeddings-enable' },
+                                { name: 'Embeddings Disable', value: 'embeddings-disable' },
+                                { name: 'Status', value: 'status' },
+                                { name: 'Select Model', value: 'select-model' },
+                                { name: 'Embeddings Select Model', value: 'embeddings-select-model' }
+                            )
+                    )
+                    .addStringOption(opt =>
+                        opt.setName('model')
+                            .setDescription('Model name (for Select Model actions)')
+                            .setRequired(false)
+                    )
             ),
         async execute(interaction: any, api: any) {
             const subcommand = interaction.options.getSubcommand();
@@ -262,6 +287,80 @@ export const commands = [
             const guildId = interaction.guildId;
 
             switch (subcommand) {
+                case 'smartclaim': {
+                    loadCopyrightConfig();
+                    const action = interaction.options.getString('action');
+                    const model = interaction.options.getString('model');
+                    
+                    switch (action) {
+                        case 'enable':
+                            copyrightConfig.smartEnabled = true;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '✅ Smart copyright detection **ENABLED**', ephemeral: true });
+                            break;
+                        case 'disable':
+                            copyrightConfig.smartEnabled = false;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '❌ Smart copyright detection **DISABLED**', ephemeral: true });
+                            break;
+                        case 'rag-enable':
+                            copyrightConfig.ragEnabled = true;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '✅ RAG contextual analysis **ENABLED**', ephemeral: true });
+                            break;
+                        case 'rag-disable':
+                            copyrightConfig.ragEnabled = false;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '❌ RAG contextual analysis **DISABLED**', ephemeral: true });
+                            break;
+                        case 'embeddings-enable':
+                            copyrightConfig.embeddingsEnabled = true;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '✅ Embeddings detection **ENABLED**', ephemeral: true });
+                            break;
+                        case 'embeddings-disable':
+                            copyrightConfig.embeddingsEnabled = false;
+                            saveCopyrightConfig();
+                            await interaction.reply({ content: '❌ Embeddings detection **DISABLED**', ephemeral: true });
+                            break;
+                        case 'select-model':
+                            if (model) {
+                                copyrightConfig.llmModel = model;
+                                saveCopyrightConfig();
+                                await interaction.reply({ content: `✅ LLM model set to **${model}**`, ephemeral: true });
+                            } else {
+                                await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
+                            }
+                            break;
+                        case 'embeddings-select-model':
+                            if (model) {
+                                copyrightConfig.embeddingModel = model;
+                                saveCopyrightConfig();
+                                await interaction.reply({ content: `✅ Embedding model set to **${model}**`, ephemeral: true });
+                            } else {
+                                await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
+                            }
+                            break;
+                        case 'status':
+                            const statusEmbed = new EmbedBuilder()
+                                .setTitle('🎛️ Copyright Smartclaim Status')
+                                .setColor('#6366f1')
+                                .setDescription('Current smart copyright configuration:')
+                                .addFields(
+                                    { name: '🧠 Smart Detection', value: copyrightConfig.smartEnabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
+                                    { name: '📚 RAG', value: copyrightConfig.ragEnabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
+                                    { name: '📐 Embeddings', value: copyrightConfig.embeddingsEnabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
+                                    { name: '🤖 LLM Model', value: `\`${copyrightConfig.llmModel}\``, inline: false },
+                                    { name: '📏 Embedding Model', value: `\`${copyrightConfig.embeddingModel}\``, inline: false },
+                                    { name: '⚡ Similarity Threshold', value: `${copyrightConfig.similarityThreshold}`, inline: true },
+                                    { name: '⚠️ First Offense', value: copyrightConfig.firstOffenseWarn ? 'Warn' : 'Fine', inline: true }
+                                )
+                                .setTimestamp();
+                            await interaction.reply({ embeds: [statusEmbed], ephemeral: true });
+                            break;
+                    }
+                    break;
+                }
                 case 'add': {
                     const term = interaction.options.getString('term').toLowerCase().trim();
                     const fine = interaction.options.getInteger('fine') || 100;
@@ -557,98 +656,6 @@ export const commands = [
                     }
                     break;
                 }
-            }
-        }
-    }
-];
-
-export const smartclaimCommands = [
-    {
-        data: new SlashCommandBuilder()
-            .setName('copyright')
-            .setDescription('Copyright management with smart detection')
-            .addSubcommand(sub => sub.setName('smartclaim').setDescription('Configure smart copyright detection')
-                .addStringOption(opt => opt.setName('action').setDescription('Action').setRequired(true)
-                    .addChoices(
-                        { name: 'Enable', value: 'enable' },
-                        { name: 'Disable', value: 'disable' },
-                        { name: 'RAG Enable', value: 'rag-enable' },
-                        { name: 'RAG Disable', value: 'rag-disable' },
-                        { name: 'Embeddings Enable', value: 'embeddings-enable' },
-                        { name: 'Embeddings Disable', value: 'embeddings-disable' },
-                        { name: 'Status', value: 'status' },
-                        { name: 'Select Model', value: 'select-model' },
-                        { name: 'Embeddings Select Model', value: 'embeddings-select-model' }
-                    )
-                )
-                .addStringOption(opt => opt.setName('model').setDescription('Model name (for Select Model actions)').setRequired(false))
-        ),
-        async execute(interaction: any, api: any) {
-            loadCopyrightConfig();
-            const action = interaction.options.getString('action');
-            const model = interaction.options.getString('model');
-            
-            switch (action) {
-                case 'enable':
-                    copyrightConfig.smartEnabled = true;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'Smart copyright detection **ENABLED**', ephemeral: true });
-                    break;
-                case 'disable':
-                    copyrightConfig.smartEnabled = false;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'Smart copyright detection **DISABLED**', ephemeral: true });
-                    break;
-                case 'rag-enable':
-                    copyrightConfig.ragEnabled = true;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'RAG contextual analysis **ENABLED**', ephemeral: true });
-                    break;
-                case 'rag-disable':
-                    copyrightConfig.ragEnabled = false;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'RAG contextual analysis **DISABLED**', ephemeral: true });
-                    break;
-                case 'embeddings-enable':
-                    copyrightConfig.embeddingsEnabled = true;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'Embeddings detection **ENABLED**', ephemeral: true });
-                    break;
-                case 'embeddings-disable':
-                    copyrightConfig.embeddingsEnabled = false;
-                    saveCopyrightConfig();
-                    await interaction.reply({ content: 'Embeddings detection **DISABLED**', ephemeral: true });
-                    break;
-                case 'select-model':
-                    if (model) {
-                        copyrightConfig.llmModel = model;
-                        saveCopyrightConfig();
-                        await interaction.reply({ content: `LLM model set to **${model}**`, ephemeral: true });
-                    } else {
-                        await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
-                    }
-                    break;
-                case 'embeddings-select-model':
-                    if (model) {
-                        copyrightConfig.embeddingModel = model;
-                        saveCopyrightConfig();
-                        await interaction.reply({ content: `Embedding model set to **${model}**`, ephemeral: true });
-                    } else {
-                        await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
-                    }
-                    break;
-                case 'status':
-                    const status = [
-                        `**Smart Detection:** ${copyrightConfig.smartEnabled ? 'Enabled' : 'Disabled'}`,
-                        `**RAG:** ${copyrightConfig.ragEnabled ? 'Enabled' : 'Disabled'}`,
-                        `**Embeddings:** ${copyrightConfig.embeddingsEnabled ? 'Enabled' : 'Disabled'}`,
-                        `**LLM Model:** \`${copyrightConfig.llmModel}\``,
-                        `**Embedding Model:** \`${copyrightConfig.embeddingModel}\``,
-                        `**Similarity Threshold:** ${copyrightConfig.similarityThreshold}`,
-                        `**First Offense:** ${copyrightConfig.firstOffenseWarn ? 'Warn' : 'Fine'}`
-                    ].join('\n');
-                    await interaction.reply({ content: status, ephemeral: true });
-                    break;
             }
         }
     }
