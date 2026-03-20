@@ -34,12 +34,16 @@
 
         /* Mobile detection */
         @media (max-width: 768px) {
-            body { font-size: 12px; }
+            body { font-size: 12px; overflow-x: hidden; }
             .sidebar { width: 100% !important; height: auto !important; flex-direction: row !important; flex-wrap: wrap; }
             .sidebar-section { flex: 1; min-width: 120px; }
-            .main { flex-direction: column !important; }
+            .main { flex-direction: column !important; position: relative !important; }
             .terminal-input { width: 70% !important; }
             button { padding: 10px 14px !important; min-height: 44px; }
+            .header { position: sticky !important; top: 0 !important; z-index: 100 !important; min-height: 50px !important; }
+            .header-border-top, .header-border-bottom { font-size: 10px !important; overflow: hidden !important; }
+            .header-content { font-size: 11px !important; }
+            .server-mode-indicator { font-size: 10px !important; padding: 4px 8px !important; }
         }
 
         /* Login Screen */

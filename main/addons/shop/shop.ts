@@ -15,13 +15,21 @@ interface ShopListing {
 
 let poolRef: any = null;
 
-const ITEM_TYPES = {
+interface ItemTypeInfo {
+    name: string;
+    emoji: string;
+    description: string;
+    table: string;
+    price_field: string | null;
+}
+
+const ITEM_TYPES: Record<string, ItemTypeInfo> = {
     copyright: {
         name: 'Copyright',
         emoji: '©️',
         description: 'A copyrighted term that generates fines',
         table: 'copyrights',
-        price_field: null
+        price_field: null as string | null
     }
 };
 

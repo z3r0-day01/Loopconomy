@@ -629,12 +629,6 @@ function createWebServer() {
                                 broadcastRestart();
                                 setTimeout(() => { process.exit(1); }, 2000);
                                 break;
-                            case 'restart':
-                                res.writeHead(200, { 'Content-Type': 'application/json' });
-                                res.end(JSON.stringify({ message: 'Bot restarting...' }));
-                                broadcastRestart();
-                                setTimeout(() => { process.exit(1); }, 2000);
-                                break;
                             case 'start':
                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                 res.end(JSON.stringify({ message: 'Bot is running (use stop/restart to control)' }));
@@ -1153,7 +1147,6 @@ async function loadAddons() {
                 await addon.init(api);
             }
 
-            // DEBUG: Log onMessage registration
             if (addon.onMessage) {
                 client.messageCommands.push(addon.onMessage);
                 console.log(`[DEBUG] Registered addon onMessage from ${folderName}`);
@@ -1164,9 +1157,17 @@ async function loadAddons() {
             console.log(`✅ Loaded addon: ${folderName} (trust level ${trustLevel})`);
         } catch (e) {
             console.error(`[LOADER] ❌ Failed to load addon ${folderName}: ${e.message}`);
+            console.error(`[LOADER] Stack: ${e.stack}`);
         }
     }
+    console.log(`[BOOT] Finished loading ${Object.keys(addons).length} addons from manifest`);
     console.log(`[BOOT] Addon loading complete`);
+    console.log(`[BOOT] Checking for ai...`);
+    if (!fs.existsSync(path.join(addonsDir, 'ai'))) {
+        console.log('[BOOT] AI folder NOT found!');
+    } else {
+        console.log('[BOOT] AI folder exists at ' + path.join(addonsDir, 'ai'));
+    }
     return addonCommands;
 }
 
