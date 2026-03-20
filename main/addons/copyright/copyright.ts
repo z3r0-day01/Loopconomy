@@ -38,7 +38,7 @@ let copyrightConfig: CopyrightConfig;
 
 function loadCopyrightConfig(): void {
     try {
-        const configPath = path.join(__dirname, '..', '..', 'copyright-config.json');
+        const configPath = path.join(process.cwd(), 'copyright-config.json');
         if (fs.existsSync(configPath)) {
             copyrightConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         } else {
@@ -67,7 +67,7 @@ function loadCopyrightConfig(): void {
 }
 
 function saveCopyrightConfig(): void {
-    const configPath = path.join(__dirname, '..', '..', 'copyright-config.json');
+    const configPath = path.join(process.cwd(), 'copyright-config.json');
     fs.writeFileSync(configPath, JSON.stringify(copyrightConfig, null, 2));
 }
 

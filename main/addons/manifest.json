@@ -58,7 +58,7 @@
         "management": {
             "enabled": true,
             "trustLevel": 5,
-            "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup", "botstart", "adminlist", "addexistingcoins"]
+            "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup", "botstart", "adminlist", "addexistingcoins", "reset-economy"]
         },
         "ai": {
             "enabled": true,

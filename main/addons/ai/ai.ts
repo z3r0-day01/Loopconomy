@@ -75,6 +75,12 @@ interface AIConfig {
     embeddingModel: string;
     similarityThreshold: number;
     maxContextMessages: number;
+    temperature: number;
+    top_p: number;
+    top_k: number;
+    min_p: number;
+    repeat_penalty: number;
+    num_predict: number;
     agenticMode: {
         enabled: boolean;
         maxContext: number;
@@ -202,6 +208,12 @@ function getDefaultConfig(): AIConfig {
         embeddingModel: 'qwen3-embedding:0.6b',
         similarityThreshold: 0.75,
         maxContextMessages: 50,
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 40,
+        min_p: 0.05,
+        repeat_penalty: 1.1,
+        num_predict: 256,
         agenticMode: {
             enabled: false,
             maxContext: 100,
@@ -342,7 +354,13 @@ async function chatWithAI(messages: any[], systemPrompt: string, channelId: stri
             body: JSON.stringify({
                 model: aiConfig.model,
                 messages: fullMessages,
-                stream: false
+                stream: false,
+                temperature: aiConfig.temperature,
+                top_p: aiConfig.top_p,
+                top_k: aiConfig.top_k,
+                min_p: aiConfig.min_p,
+                repeat_penalty: aiConfig.repeat_penalty,
+                num_predict: aiConfig.num_predict
             })
         }, 30000);
         
@@ -1357,6 +1375,12 @@ export const commands = [
                         { name: 'Max Context Messages', value: 'maxcontext' },
                         { name: 'Embedding Model', value: 'embedding' },
                         { name: 'Ollama URL', value: 'ollama' },
+                        { name: 'Temperature', value: 'temperature' },
+                        { name: 'Top P', value: 'top-p' },
+                        { name: 'Top K', value: 'top-k' },
+                        { name: 'Min P', value: 'min-p' },
+                        { name: 'Repeat Penalty', value: 'repeat-penalty' },
+                        { name: 'Max Tokens', value: 'num-predict' },
                         { name: 'Full Status', value: 'status' }
                     )
             )
@@ -1480,6 +1504,186 @@ export const commands = [
                     }
                     break;
                     
+                case 'temperature':
+                    if (value) {
+                        const temp = parseFloat(value);
+                        if (isNaN(temp) || temp < 0 || temp > 2) {
+                            return interaction.reply({ content: 'Temperature must be between 0 and 2 (e.g., 0.7)', ephemeral: true });
+                        }
+                        aiConfig.temperature = temp;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Temperature Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Temperature set to **${temp}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🌡️ Temperature')
+                            .setColor('#6366f1')
+                            .setDescription('Controls randomness in generation')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.temperature}`, inline: true })
+                            .addFields({ name: 'Range', value: '0.0 - 2.0', inline: true })
+                            .setFooter({ text: 'Use /ai-config temperature <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
+                case 'top-p':
+                    if (value) {
+                        const topP = parseFloat(value);
+                        if (isNaN(topP) || topP < 0 || topP > 1) {
+                            return interaction.reply({ content: 'Top P must be between 0 and 1 (e.g., 0.9)', ephemeral: true });
+                        }
+                        aiConfig.top_p = topP;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Top P Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Top P set to **${topP}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('📊 Top P (Nucleus Sampling)')
+                            .setColor('#6366f1')
+                            .setDescription('Controls diversity via nucleus sampling')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.top_p}`, inline: true })
+                            .addFields({ name: 'Range', value: '0.0 - 1.0', inline: true })
+                            .setFooter({ text: 'Use /ai-config top-p <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
+                case 'top-k':
+                    if (value) {
+                        const topK = parseInt(value);
+                        if (isNaN(topK) || topK < 1 || topK > 200) {
+                            return interaction.reply({ content: 'Top K must be between 1 and 200 (e.g., 40)', ephemeral: true });
+                        }
+                        aiConfig.top_k = topK;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Top K Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Top K set to **${topK}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🔢 Top K')
+                            .setColor('#6366f1')
+                            .setDescription('Limits vocabulary to top K tokens')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.top_k}`, inline: true })
+                            .addFields({ name: 'Range', value: '1 - 200', inline: true })
+                            .setFooter({ text: 'Use /ai-config top-k <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
+                case 'min-p':
+                    if (value) {
+                        const minP = parseFloat(value);
+                        if (isNaN(minP) || minP < 0 || minP > 1) {
+                            return interaction.reply({ content: 'Min P must be between 0 and 1 (e.g., 0.05)', ephemeral: true });
+                        }
+                        aiConfig.min_p = minP;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Min P Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Min P set to **${minP}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('📉 Min P')
+                            .setColor('#6366f1')
+                            .setDescription('Minimum probability threshold')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.min_p}`, inline: true })
+                            .addFields({ name: 'Range', value: '0.0 - 1.0', inline: true })
+                            .setFooter({ text: 'Use /ai-config min-p <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
+                case 'repeat-penalty':
+                    if (value) {
+                        const repeatPenalty = parseFloat(value);
+                        if (isNaN(repeatPenalty) || repeatPenalty < 0 || repeatPenalty > 2) {
+                            return interaction.reply({ content: 'Repeat Penalty must be between 0 and 2 (e.g., 1.1)', ephemeral: true });
+                        }
+                        aiConfig.repeat_penalty = repeatPenalty;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Repeat Penalty Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Repeat Penalty set to **${repeatPenalty}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🔄 Repeat Penalty')
+                            .setColor('#6366f1')
+                            .setDescription('Penalizes repeated tokens')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.repeat_penalty}`, inline: true })
+                            .addFields({ name: 'Range', value: '0.0 - 2.0', inline: true })
+                            .setFooter({ text: 'Use /ai-config repeat-penalty <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
+                case 'num-predict':
+                    if (value) {
+                        const numPredict = parseInt(value);
+                        if (isNaN(numPredict) || numPredict < 64 || numPredict > 4096) {
+                            return interaction.reply({ content: 'Max Tokens must be between 64 and 4096 (e.g., 256)', ephemeral: true });
+                        }
+                        aiConfig.num_predict = numPredict;
+                        saveConfig();
+                        
+                        const setEmbed = new EmbedBuilder()
+                            .setTitle('✅ Max Tokens Updated')
+                            .setColor('#22c55e')
+                            .setDescription(`Max Tokens set to **${numPredict}**`)
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🎚️ Max Tokens')
+                            .setColor('#6366f1')
+                            .setDescription('Maximum number of tokens to generate')
+                            .addFields({ name: 'Current Value', value: `${aiConfig.num_predict}`, inline: true })
+                            .addFields({ name: 'Range', value: '64 - 4096', inline: true })
+                            .setFooter({ text: 'Use /ai-config num-predict <value> to change' })
+                            .setTimestamp();
+                        
+                        await interaction.reply({ embeds: [embed], ephemeral: true });
+                    }
+                    break;
+                    
                 case 'status':
                     const fullStatusEmbed = new EmbedBuilder()
                         .setTitle('🎛️ AI Configuration Status')
@@ -1491,6 +1695,12 @@ export const commands = [
                             { name: '🔗 Ollama URL', value: `\`${aiConfig.ollamaUrl}\``, inline: false },
                             { name: '⚡ Similarity', value: `${aiConfig.similarityThreshold}`, inline: true },
                             { name: '💬 Max Context', value: `${aiConfig.maxContextMessages}`, inline: true },
+                            { name: '🌡️ Temperature', value: `${aiConfig.temperature}`, inline: true },
+                            { name: '📊 Top P', value: `${aiConfig.top_p}`, inline: true },
+                            { name: '🔢 Top K', value: `${aiConfig.top_k}`, inline: true },
+                            { name: '📉 Min P', value: `${aiConfig.min_p}`, inline: true },
+                            { name: '🔄 Repeat Penalty', value: `${aiConfig.repeat_penalty}`, inline: true },
+                            { name: '🎚️ Max Tokens', value: `${aiConfig.num_predict}`, inline: true },
                             { name: '🌐 Global', value: aiConfig.enabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
                             { name: '🌀 Agentic', value: aiConfig.agenticMode.enabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
                             { name: '📺 Channels', value: `${aiConfig.enabledChannels.length}`, inline: true },
@@ -1700,45 +1910,6 @@ export const init = async (api: any) => {
     await loadCodeRAG();
     startScheduler();
     startAutonomousScheduler(api);
-    
-    api.listen('messageCreate', async (msg: any) => {
-        if (msg.author.bot) return;
-        if (!isChannelEnabled(msg.channelId)) return;
-        
-        const content = msg.content.trim();
-        if (!content) return;
-        
-        addToMemory(msg.channelId, 'user', content);
-        
-        try {
-            const recent = channelMemory.get(msg.channelId) || [];
-            const contextMessages = recent.slice(-20).map(m => ({ role: m.role, content: m.content }));
-            
-            const ragContext = await searchCodeRAG(content);
-            const contextText = ragContext ? '\n\nKnowledge: ' + ragContext : '';
-            
-            const messages = [
-                ...contextMessages,
-                { role: 'user', content: content + contextText }
-            ];
-            
-            const systemPrompt = aiConfig.agenticMode.enabled ? getAgenticSystemPrompt() : getDefaultSystemPrompt();
-            
-            const thinking = await msg.reply(THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)]);
-            
-            const response = await chatWithAI(messages, systemPrompt, msg.channelId);
-            const finalResponse = cleanResponse(response);
-            
-            if (finalResponse) {
-                await thinking.edit(finalResponse);
-                addToMemory(msg.channelId, 'assistant', finalResponse);
-            } else {
-                await thinking.delete();
-            }
-        } catch (e) {
-            console.error('[AI] Error:', e);
-        }
-    });
     
     const mode = aiConfig.agenticMode.enabled ? ' (Agentic)' : '';
     api.log('AI Module Loaded. Status: ' + (aiConfig.enabled ? 'ENABLED' : 'DISABLED') + ' | Model: ' + aiConfig.model + ' | Scheduled: ' + aiConfig.scheduledMessages.length + mode);

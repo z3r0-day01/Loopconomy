@@ -4,5 +4,5 @@
     "version": "1.0.0",
     "entry": "management.ts",
     "trustLevel": 5,
-    "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup"]
+    "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup", "botstart", "adminlist", "addexistingcoins", "reset-economy"]
 }
