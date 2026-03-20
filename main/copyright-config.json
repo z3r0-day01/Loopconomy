@@ -1,0 +1,9 @@
+{
+  "smartEnabled": false,
+  "ragEnabled": false,
+  "embeddingsEnabled": false,
+  "llmModel": "granite4:350m-h-q8_0",
+  "embeddingModel": "granite-embedding:278m-fp16",
+  "similarityThreshold": 0.75,
+  "firstOffenseWarn": true
+}

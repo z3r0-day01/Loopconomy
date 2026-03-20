@@ -5,6 +5,12 @@ const path = require('path');
 const { exec } = require('child_process');
 const http = require('http');
 const https = require('https');
+
+// --- Global references for graceful shutdown ---
+globalThis.botServer = null;
+globalThis.botPool = null;
+let isRestarting = false;
+
 require('ts-node').register();
 require('dotenv').config();
 
@@ -37,9 +43,56 @@ if (fs.existsSync(LOCK_FILE)) {
 
 fs.writeFileSync(LOCK_FILE, PID);
 
+// --- Graceful Shutdown Handler ---
+async function gracefulShutdown(code = 0) {
+    if (gracefulShutdown._running) {
+        console.log('[SHUTDOWN] Already shutting down...');
+        return;
+    }
+    gracefulShutdown._running = true;
+    
+    console.log('[SHUTDOWN] Initiating graceful shutdown...');
+    
+    try {
+        if (globalThis.botServer) {
+            console.log('[SHUTDOWN] Closing HTTP server...');
+            await new Promise((resolve) => {
+                globalThis.botServer.close(() => {
+                    console.log('[SHUTDOWN] HTTP server closed');
+                    resolve();
+                });
+            });
+        }
+        
+        if (globalThis.botPool) {
+            console.log('[SHUTDOWN] Closing database pool...');
+            await globalThis.botPool.end();
+            console.log('[SHUTDOWN] Database pool closed');
+        }
+        
+        console.log('[SHUTDOWN] Cleanup complete');
+    } catch (e) {
+        console.error('[SHUTDOWN] Error during shutdown:', e);
+    }
+    
+    process.exit(code);
+}
+
+// --- Signal Handlers ---
+process.on('SIGTERM', () => {
+    console.log('[SIGTERM] Received SIGTERM');
+    isRestarting = true;
+    gracefulShutdown(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('[SIGINT] Received SIGINT');
+    gracefulShutdown(0);
+});
+
 process.on('exit', () => {
     if (fs.existsSync(LOCK_FILE) && fs.readFileSync(LOCK_FILE, 'utf8') === PID) {
-        fs.unlinkSync(LOCK_FILE);
+        try { fs.unlinkSync(LOCK_FILE); } catch (e) {}
     }
 });
 
@@ -51,7 +104,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // PostgreSQL pool
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = globalThis.botPool = new Pool({ connectionString: DATABASE_URL });
 
 const client = new Client({
     intents: [
@@ -404,12 +457,12 @@ function createWebServer() {
                             case 'restart':
                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                 res.end(JSON.stringify({ message: 'Restarting bot...' }));
-                                setTimeout(() => { process.exit(1); }, 1000);
+                                setTimeout(() => { isRestarting = true; gracefulShutdown(0); }, 1000);
                                 break;
                             case 'shutdown':
                                 res.writeHead(200, { 'Content-Type': 'application/json' });
                                 res.end(JSON.stringify({ message: 'Shutting down bot...' }));
-                                setTimeout(() => { process.exit(0); }, 1000);
+                                setTimeout(() => { gracefulShutdown(0); }, 1000);
                                 break;
                             // ===== GAME ENDPOINTS =====
                             case 'ai-balance':
@@ -855,9 +908,11 @@ function createWebServer() {
 
     if (fs.existsSync(SSL_KEY) && fs.existsSync(SSL_CERT)) {
         const httpsServer = https.createServer({ key: fs.readFileSync(SSL_KEY), cert: fs.readFileSync(SSL_CERT) }, serverHandler);
+        globalThis.botServer = httpsServer;
         httpsServer.listen(WEB_PORT, () => console.log(`🔒 HTTPS Server running on port ${WEB_PORT}`));
     } else {
         const httpServer = http.createServer(serverHandler);
+        globalThis.botServer = httpServer;
         httpServer.listen(WEB_PORT, () => console.log(`🌐 HTTP Server running on port ${WEB_PORT}`));
     }
 }

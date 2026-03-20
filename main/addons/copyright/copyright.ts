@@ -1,5 +1,17 @@
 import { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
 import * as path from 'path';
+import * as fs from 'fs';
+
+async function fetchWithTimeout(url: string, options: any, timeoutMs = 5000): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        return response;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
 
 interface CopyrightEntry {
     id: number;
@@ -10,6 +22,135 @@ interface CopyrightEntry {
     fine_amount: number;
     is_permanent: boolean;
     created_at: Date;
+}
+
+interface CopyrightConfig {
+    smartEnabled: boolean;
+    ragEnabled: boolean;
+    embeddingsEnabled: boolean;
+    llmModel: string;
+    embeddingModel: string;
+    similarityThreshold: number;
+    firstOffenseWarn: boolean;
+}
+
+let copyrightConfig: CopyrightConfig;
+
+function loadCopyrightConfig(): void {
+    try {
+        const configPath = path.join(__dirname, '..', '..', 'copyright-config.json');
+        if (fs.existsSync(configPath)) {
+            copyrightConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        } else {
+            copyrightConfig = {
+                smartEnabled: false,
+                ragEnabled: false,
+                embeddingsEnabled: false,
+                llmModel: 'granite4:350m-h-q8_0',
+                embeddingModel: 'granite-embedding:278m-fp16',
+                similarityThreshold: 0.75,
+                firstOffenseWarn: true
+            };
+            fs.writeFileSync(configPath, JSON.stringify(copyrightConfig, null, 2));
+        }
+    } catch (e) {
+        copyrightConfig = {
+            smartEnabled: false,
+            ragEnabled: false,
+            embeddingsEnabled: false,
+            llmModel: 'granite4:350m-h-q8_0',
+            embeddingModel: 'granite-embedding:278m-fp16',
+            similarityThreshold: 0.75,
+            firstOffenseWarn: true
+        };
+    }
+}
+
+function saveCopyrightConfig(): void {
+    const configPath = path.join(__dirname, '..', '..', 'copyright-config.json');
+    fs.writeFileSync(configPath, JSON.stringify(copyrightConfig, null, 2));
+}
+
+async function getEmbedding(text: string): Promise<number[]> {
+    try {
+        const response = await fetchWithTimeout('http://localhost:11434/api/embeddings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: copyrightConfig.embeddingModel, prompt: text })
+        }, 10000);
+        const data: any = await response.json();
+        return data.embedding || [];
+    } catch (e: any) {
+        console.log('[Copyright-Embed] Embedding failed:', e.message);
+        return [];
+    }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length || a.length === 0) return 0;
+    let dot = 0, magA = 0, magB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        magA += a[i] * a[i];
+        magB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+async function smartAnalyze(content: string, existingTerm: string): Promise<{ isMatch: boolean; confidence: number; reasoning: string }> {
+    try {
+        const response = await fetchWithTimeout('http://localhost:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: copyrightConfig.llmModel,
+                messages: [
+                    { role: 'system', content: 'You are a copyright detection AI. Analyze if the message content violates the copyrighted term. Respond ONLY with JSON: {"match": true/false, "confidence": 0.0-1.0, "reasoning": "brief explanation"}' },
+                    { role: 'user', content: `Copyrighted term: "${existingTerm}"\n\nMessage: "${content}"` }
+                ],
+                stream: false
+            })
+        }, 15000);
+        const data: any = await response.json();
+        const result = JSON.parse(data.message?.content || '{"match":false,"confidence":0,"reasoning":"Parse error"}');
+        return { isMatch: result.match, confidence: result.confidence, reasoning: result.reasoning };
+    } catch (e: any) {
+        console.log('[Copyright-Smart] Analysis failed:', e.message);
+        return { isMatch: false, confidence: 0, reasoning: 'AI unavailable' };
+    }
+}
+
+async function checkSmartViolation(content: string, userId: string, pool: any): Promise<{ violated: boolean; term?: string; isFirstOffense?: boolean; reasoning?: string }> {
+    const result = await pool.query('SELECT * FROM copyrights WHERE enabled = true');
+    
+    for (const row of result.rows) {
+        const offenseCheck = await pool.query(
+            'SELECT COUNT(*) FROM copyright_offenses WHERE uid = $1 AND copyright_id = $2',
+            [userId, row.id]
+        );
+        const hasPriorOffense = parseInt(offenseCheck.rows[0].count) > 0;
+        
+        if (copyrightConfig.embeddingsEnabled && row.embedding) {
+            const contentEmb = await getEmbedding(content);
+            const sim = cosineSimilarity(contentEmb, row.embedding);
+            if (sim >= copyrightConfig.similarityThreshold) {
+                return { violated: true, term: row.term, isFirstOffense: !hasPriorOffense, reasoning: `Similarity: ${(sim * 100).toFixed(1)}%` };
+            }
+        }
+        
+        if (copyrightConfig.smartEnabled) {
+            const analysis = await smartAnalyze(content, row.term);
+            if (analysis.isMatch) {
+                return { violated: true, term: row.term, isFirstOffense: !hasPriorOffense, reasoning: analysis.reasoning };
+            }
+        }
+        
+        if (content.toLowerCase().includes(row.term.toLowerCase())) {
+            return { violated: true, term: row.term, isFirstOffense: !hasPriorOffense, reasoning: 'Exact match' };
+        }
+    }
+    
+    return { violated: false };
 }
 
 let db: any = null;
@@ -421,6 +562,98 @@ export const commands = [
     }
 ];
 
+export const smartclaimCommands = [
+    {
+        data: new SlashCommandBuilder()
+            .setName('copyright')
+            .setDescription('Copyright management with smart detection')
+            .addSubcommand(sub => sub.setName('smartclaim').setDescription('Configure smart copyright detection')
+                .addStringOption(opt => opt.setName('action').setDescription('Action').setRequired(true)
+                    .addChoices(
+                        { name: 'Enable', value: 'enable' },
+                        { name: 'Disable', value: 'disable' },
+                        { name: 'RAG Enable', value: 'rag-enable' },
+                        { name: 'RAG Disable', value: 'rag-disable' },
+                        { name: 'Embeddings Enable', value: 'embeddings-enable' },
+                        { name: 'Embeddings Disable', value: 'embeddings-disable' },
+                        { name: 'Status', value: 'status' },
+                        { name: 'Select Model', value: 'select-model' },
+                        { name: 'Embeddings Select Model', value: 'embeddings-select-model' }
+                    )
+                )
+                .addStringOption(opt => opt.setName('model').setDescription('Model name (for Select Model actions)').setRequired(false))
+        ),
+        async execute(interaction: any, api: any) {
+            loadCopyrightConfig();
+            const action = interaction.options.getString('action');
+            const model = interaction.options.getString('model');
+            
+            switch (action) {
+                case 'enable':
+                    copyrightConfig.smartEnabled = true;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'Smart copyright detection **ENABLED**', ephemeral: true });
+                    break;
+                case 'disable':
+                    copyrightConfig.smartEnabled = false;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'Smart copyright detection **DISABLED**', ephemeral: true });
+                    break;
+                case 'rag-enable':
+                    copyrightConfig.ragEnabled = true;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'RAG contextual analysis **ENABLED**', ephemeral: true });
+                    break;
+                case 'rag-disable':
+                    copyrightConfig.ragEnabled = false;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'RAG contextual analysis **DISABLED**', ephemeral: true });
+                    break;
+                case 'embeddings-enable':
+                    copyrightConfig.embeddingsEnabled = true;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'Embeddings detection **ENABLED**', ephemeral: true });
+                    break;
+                case 'embeddings-disable':
+                    copyrightConfig.embeddingsEnabled = false;
+                    saveCopyrightConfig();
+                    await interaction.reply({ content: 'Embeddings detection **DISABLED**', ephemeral: true });
+                    break;
+                case 'select-model':
+                    if (model) {
+                        copyrightConfig.llmModel = model;
+                        saveCopyrightConfig();
+                        await interaction.reply({ content: `LLM model set to **${model}**`, ephemeral: true });
+                    } else {
+                        await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
+                    }
+                    break;
+                case 'embeddings-select-model':
+                    if (model) {
+                        copyrightConfig.embeddingModel = model;
+                        saveCopyrightConfig();
+                        await interaction.reply({ content: `Embedding model set to **${model}**`, ephemeral: true });
+                    } else {
+                        await interaction.reply({ content: 'Please provide a model name', ephemeral: true });
+                    }
+                    break;
+                case 'status':
+                    const status = [
+                        `**Smart Detection:** ${copyrightConfig.smartEnabled ? 'Enabled' : 'Disabled'}`,
+                        `**RAG:** ${copyrightConfig.ragEnabled ? 'Enabled' : 'Disabled'}`,
+                        `**Embeddings:** ${copyrightConfig.embeddingsEnabled ? 'Enabled' : 'Disabled'}`,
+                        `**LLM Model:** \`${copyrightConfig.llmModel}\``,
+                        `**Embedding Model:** \`${copyrightConfig.embeddingModel}\``,
+                        `**Similarity Threshold:** ${copyrightConfig.similarityThreshold}`,
+                        `**First Offense:** ${copyrightConfig.firstOffenseWarn ? 'Warn' : 'Fine'}`
+                    ].join('\n');
+                    await interaction.reply({ content: status, ephemeral: true });
+                    break;
+            }
+        }
+    }
+];
+
 async function showShop(interaction: any, pool: any, guildId: string, userId: string) {
     try {
         const listings = await pool.query(
@@ -463,6 +696,8 @@ async function showShop(interaction: any, pool: any, guildId: string, userId: st
 
 export const init = async (api: any) => {
     poolRef = api.client.pool || api.pool;
+    loadCopyrightConfig();
+    api.log(`[Copyright] Smart: ${copyrightConfig.smartEnabled} | RAG: ${copyrightConfig.ragEnabled} | Embeddings: ${copyrightConfig.embeddingsEnabled}`);
     
     api.listen('messageCreate', async (msg: any) => {
         if (msg.author.bot) return;

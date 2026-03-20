@@ -63,7 +63,7 @@
         "ai": {
             "enabled": true,
             "trustLevel": 2,
-            "commandList": ["ai", "ai-toggle", "ai-model", "ai-manage", "ai-agentic", "ai-schedule", "ai-rag", "ai-logs", "ai-help"]
+            "commandList": ["ai", "ai-toggle", "ai-model", "ai-manage", "ai-agentic", "ai-schedule", "ai-rag", "ai-logs", "ai-help", "ai-config"]
         }
     }
 }

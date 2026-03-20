@@ -2,7 +2,7 @@
     "name": "ai",
     "entry": "ai.ts",
     "trustLevel": 2,
-    "commandList": ["ai", "ai-toggle", "ai-model", "ai-manage", "ai-agentic", "ai-schedule", "ai-rag", "ai-logs", "ai-help"],
+    "commandList": ["ai", "ai-toggle", "ai-model", "ai-manage", "ai-agentic", "ai-schedule", "ai-rag", "ai-logs", "ai-help", "ai-config"],
     "description": "AI Chat with embeddings-based memory, RAG, agentic mode, and scheduled messages"
 }
 

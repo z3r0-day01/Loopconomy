@@ -39,10 +39,6 @@ export const commands = [
             .setName('shop')
             .setDescription('Marketplace - buy and sell items')
             .addSubcommand(sub =>
-                sub.setName('copyright')
-                    .setDescription('Browse copyright marketplace')
-            )
-            .addSubcommand(sub =>
                 sub.setName('sell')
                     .setDescription('List an item for sale')
                     .addStringOption(opt =>
@@ -115,7 +111,6 @@ export const commands = [
             const guildId = interaction.guildId;
 
             switch (subcommand) {
-                case 'copyright':
                 case 'list': {
                     const itemType = interaction.options.getString('type') || 'copyright';
                     const targetUser = interaction.options.getUser('user');
