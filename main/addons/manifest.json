@@ -60,6 +60,11 @@
             "trustLevel": 5,
             "commandList": ["botstatus", "botlogs", "botrestart", "botshutdown", "botbackup", "botstart", "adminlist", "addexistingcoins", "reset-economy"]
         },
+        "bank": {
+            "enabled": true,
+            "trustLevel": 2,
+            "commandList": ["bank", "social-credit"]
+        },
         "ai": {
             "enabled": true,
             "trustLevel": 2,

@@ -37,8 +37,11 @@ interface CopyrightConfig {
 let copyrightConfig: CopyrightConfig;
 
 function loadCopyrightConfig(): void {
+    console.log('[Copyright-Debug] Loading config...');
     try {
         const configPath = path.join(process.cwd(), 'copyright-config.json');
+        console.log('[Copyright-Debug] Config path:', configPath);
+        console.log('[Copyright-Debug] Config exists:', fs.existsSync(configPath));
         if (fs.existsSync(configPath)) {
             copyrightConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         } else {
@@ -291,6 +294,7 @@ export const commands = [
                     loadCopyrightConfig();
                     const action = interaction.options.getString('action');
                     const model = interaction.options.getString('model');
+                    console.log('[Copyright-Debug] SmartClaim triggered, action:', action);
                     
                     switch (action) {
                         case 'enable':
@@ -342,6 +346,7 @@ export const commands = [
                             }
                             break;
                         case 'status':
+                            console.log('[Copyright-Debug] Status request, config:', copyrightConfig);
                             const statusEmbed = new EmbedBuilder()
                                 .setTitle('🎛️ Copyright Smartclaim Status')
                                 .setColor('#6366f1')

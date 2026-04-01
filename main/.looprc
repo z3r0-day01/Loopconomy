@@ -1,0 +1,15 @@
+# LUMA Configuration
+# Loopconomy Unified Manager Application
+
+[main]
+api_url = http://localhost:8080
+log_lines = 50
+
+[display]
+theme = dark
+
+[aliases]
+ls = logs
+r = restart
+st = status
+q = quit

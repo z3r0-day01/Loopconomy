@@ -6,21 +6,19 @@ const AI_CONFIG_FILE = 'ai-config.json';
 const MEMORY_LIMIT = 60;
 const BASE_DIR = process.cwd();
 
-const THINKING_MESSAGES = [
-    "Processing neural pathways...",
-    "Running cognitive protocols...",
-    "Consulting the oracle...",
-    "Calculating probability matrices...",
-    "Accessing Super Secret Files...",
-    "Running 3 Million Poker Simulations",
-    "Decrypting the cosmic code...",
-    "Analyzing quantum possibilities...",
-    "Consulting the blockchain...",
+const UNHINGED_THINKING = [
+    "Decrypting government files...",
+    "Accessing Epstein's flight logs...",
+    "Consulting the shadow government...",
+    "Bypassing NATO firewalls...",
+    "Running predictive algorithms on your crush...",
+    "Calculating optimal chaos parameters...",
     "Downloading more RAM...",
-    "Reticulating splines...",
-    "Generating witty response...",
-    " consulting the void...",
-    "Establishing connection to the mainframe..."
+    "Hacking the mainframes...",
+    "Decoding alien signals...",
+    "Negotiating with dark web vendors...",
+    "Simulating alternate timelines...",
+    "Analyzing your message for maximum chaos..."
 ];
 
 const FUN_MESSAGES: Record<string, string> = {
@@ -365,7 +363,13 @@ async function chatWithAI(messages: any[], systemPrompt: string, channelId: stri
         }, 30000);
         
         const data: any = await response.json();
-        return data.message?.content || '';
+        const responseContent = data.message?.content || '';
+        // Extract and log CoT reasoning
+        const cotMatch = responseContent.match(/\[REASONING\]([\s\S]*?)\[\/REASONING\]/i);
+        if (cotMatch) {
+            console.log('[AI-CoT] Reasoning:', cotMatch[1].trim().substring(0, 500));
+        }
+        return responseContent;
     } catch (e) {
         return 'AI timed out or unavailable';
     }
@@ -481,11 +485,19 @@ async function checkAutonomousChime(channelId: string, api: any): Promise<void> 
 }
 
 function getDefaultSystemPrompt(): string {
-    return 'You are LOOP, an AI in the Loopconomy Discord bot. Be helpful, concise, and occasionally witty.';
+    return `You are LOOP, an AI in the Loopconomy Discord bot. Be helpful, concise, and occasionally witty.
+
+IMPORTANT: Before responding, think silently. Use this format:
+[REASONING]Your internal reasoning here[/REASONING]
+Then respond normally.`;
 }
 
 function getAgenticSystemPrompt(): string {
-    return 'You are LOOP, an AI in LISTENING MODE. Be selective about responding. Keep responses short (1-3 sentences).';
+    return `You are LOOP, an AI in LISTENING MODE. Be selective about responding. Keep responses short (1-3 sentences).
+
+IMPORTANT: Before responding, think silently. Use this format:
+[REASONING]Your internal reasoning here[/REASONING]
+Then respond normally.`;
 }
 
 function cleanResponse(text: string): string {
@@ -730,7 +742,7 @@ export const commands = [
             }
             
             const userMessage = interaction.options.getString('message');
-            const thinking = THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
             
             await interaction.reply(thinking);
             
@@ -1812,7 +1824,7 @@ export const onMessage = async (message: any, api: any) => {
                 return;
             }
             
-            const thinking = THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
             thinkingMsg = await message.reply(thinking).catch(() => null);
             
             const passiveContext = await getPassiveRagContext(message.guildId, content);
@@ -1843,7 +1855,7 @@ export const onMessage = async (message: any, api: any) => {
             }
             
         } else {
-            const thinking = THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
             thinkingMsg = await message.reply(thinking).catch(() => null);
             
             const userMessage = content + (recentContext ? '\n\nRecent: ' + recentContext : '') + (replyContext ? '\n\n' + replyContext : '');

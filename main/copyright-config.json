@@ -1,8 +1,8 @@
 {
-  "smartEnabled": false,
-  "ragEnabled": false,
-  "embeddingsEnabled": false,
-  "llmModel": "granite4:350m-h-q8_0",
+  "smartEnabled": true,
+  "ragEnabled": true,
+  "embeddingsEnabled": true,
+  "llmModel": "gemini-3-flash-preview:cloud",
   "embeddingModel": "granite-embedding:278m-fp16",
   "similarityThreshold": 0.75,
   "firstOffenseWarn": true

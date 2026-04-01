@@ -1,0 +1,8 @@
+{
+    "name": "bank",
+    "description": "Banking & Social Credit System",
+    "version": "1.0.0",
+    "entry": "bank.ts",
+    "trustLevel": 2,
+    "commandList": ["bank", "social-credit"]
+}
