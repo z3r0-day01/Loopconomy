@@ -6,6 +6,11 @@ const { exec } = require('child_process');
 const http = require('http');
 const https = require('https');
 
+const BOT_VERSION = 'v1.1.2_r2-1';
+const LUMA_VERSION = 'v1.1.0';
+const NESH_VERSION = 'v1.0.0';
+const ADMIN_VERSION = 'v1.1.2_r2-1';
+
 // --- Global references for graceful shutdown ---
 globalThis.botServer = null;
 globalThis.botPool = null;

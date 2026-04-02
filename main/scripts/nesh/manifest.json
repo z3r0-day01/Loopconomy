@@ -1,0 +1,26 @@
+{
+    "name": "NeSH",
+    "version": "1.0.0",
+    "description": "Neon Shell - Advanced syntax layer for LUMA",
+    "entry": "__init__.py",
+    "requires": ["python3"],
+    "features": [
+        "Pipeline operators (|, =>>, &)",
+        "Environment variables ($VAR, SET_ENV)",
+        "Control flow (IF, WHILE, FOR, DEF)",
+        "Typed variables (Z_<name>:<type>)",
+        "Neon-Carbon BASIC interpreter",
+        "Neon Graphics mode"
+    ],
+    "usage": {
+        "luma": "Press ALT+S or type 'shell' to enter NeSH",
+        "neon_carbon": "Type 'interface Nec' to enter BASIC mode",
+        "neon_graphics": "Type 'interface Nex' to enter Graphics mode"
+    },
+    "syntax_examples": [
+        "SET_ENV $var := \"value\"",
+        "Z_counter:Int = 0",
+        "IF (x > 5) : PRINT x",
+        "Select-Type: WiFi | Sort +Strength"
+    ]
+}

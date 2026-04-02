@@ -17,7 +17,7 @@
   "repeat_penalty": 1.1,
   "num_predict": 256,
   "agenticMode": {
-    "enabled": true,
+    "enabled": false,
     "maxContext": 100,
     "reasoningEnabled": true,
     "timingEnabled": true
