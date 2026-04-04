@@ -1,0 +1,1 @@
+/home/z3r0/loop/main/scripts/luma/target/release/luma: /home/z3r0/loop/main/scripts/luma/src/api.rs /home/z3r0/loop/main/scripts/luma/src/main.rs /home/z3r0/loop/main/scripts/luma/src/nesh.rs /home/z3r0/loop/main/scripts/luma/src/nexe.rs

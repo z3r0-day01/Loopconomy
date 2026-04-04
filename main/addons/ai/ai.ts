@@ -2,9 +2,52 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const AI_CONFIG_FILE = 'ai-config.json';
-const MEMORY_LIMIT = 60;
-const BASE_DIR = process.cwd();
+const configPath = path.join(process.cwd(), 'ai-config.json');
+const userProfilesPath = path.join(process.cwd(), 'ai-user-profiles.json');
+const ragPath = path.join(process.cwd(), 'ai-rag-files.json');
+const logsPath = path.join(process.cwd(), 'ai-logs.json');
+
+interface AIConfig {
+    enabled: boolean;
+    model: string;
+    ollamaUrl: string;
+    systemPrompt: string;
+    enabledChannels: string[];
+    scheduledMessages: any[];
+    embeddingModel: string;
+    similarityThreshold: number;
+    maxContextMessages: number;
+    temperature: number;
+    top_p: number;
+    top_k: number;
+    min_p: number;
+    repeat_penalty: number;
+    num_predict: number;
+    agenticMode: {
+        enabled: boolean;
+        maxContext: number;
+        reasoningEnabled: boolean;
+        timingEnabled: boolean;
+    };
+    reasoningModel?: string;
+    creatorId?: string;
+}
+
+interface UserProfile {
+    userId: string;
+    username: string;
+    messageCount: number;
+    lastSeen: number;
+    preferences: {
+        tone: string;
+        responseLength: 'short' | 'medium' | 'long';
+    };
+    history: { role: string; content: string; timestamp: number }[];
+}
+
+interface UserProfiles {
+    [userId: string]: UserProfile;
+}
 
 const UNHINGED_THINKING = [
     "Decrypting government files...",
@@ -18,7 +61,8 @@ const UNHINGED_THINKING = [
     "Decoding alien signals...",
     "Negotiating with dark web vendors...",
     "Simulating alternate timelines...",
-    "Analyzing your message for maximum chaos..."
+    "Analyzing your message for maximum chaos...",
+    "Doing crack and banging your mom..."
 ];
 
 const FUN_MESSAGES: Record<string, string> = {
@@ -27,7 +71,10 @@ const FUN_MESSAGES: Record<string, string> = {
     get_balance: "Accessing restricted financial records...",
     add_coins: "Crediting to the economy matrix...",
     remove_coins: "Debiting from the central bank...",
-    get_ai_balance: "Consulting the cosmic ledger...",
+    get_social_credit: "Consulting the cosmic ledger...",
+    get_debt_status: "Checking with the loan sharks...",
+    check_credit_score: "Accessing your financial karma...",
+    get_bank_balance: "Peeking into the vault...",
     play_blackjack: "Shuffling the cosmic deck...",
     play_poker: "Dealing the cards of fate...",
     play_roulette: "Spinning the wheel of destiny...",
@@ -60,152 +107,70 @@ const INTEREST_MESSAGES = [
     "Meanwhile...",
     "Oh, and...",
     "Speaking of...",
-    "That reminds me..."
+    "That reminds me...",
+    "While I'm smoking weed..."
 ];
 
-interface AIConfig {
-    enabled: boolean;
-    model: string;
-    ollamaUrl: string;
-    systemPrompt: string;
-    enabledChannels: string[];
-    scheduledMessages: ScheduledMessage[];
-    embeddingModel: string;
-    similarityThreshold: number;
-    maxContextMessages: number;
-    temperature: number;
-    top_p: number;
-    top_k: number;
-    min_p: number;
-    repeat_penalty: number;
-    num_predict: number;
-    agenticMode: {
-        enabled: boolean;
-        maxContext: number;
-        reasoningEnabled: boolean;
-        timingEnabled: boolean;
-    };
+function getRandomThinkingMessage(): string {
+    return UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
 }
 
-interface ScheduledMessage {
+function getToolMessage(toolName: string): string {
+    return FUN_MESSAGES[toolName] || "Executing dark magic...";
+}
+
+function getInterestMessage(): string {
+    return INTEREST_MESSAGES[Math.floor(Math.random() * INTEREST_MESSAGES.length)];
+}
+
+let lastThinkingMessage = "";
+let responseCount = 0;
+let lastResponseTime = 0;
+const RESPONSE_COOLDOWN = 5000; // 5 seconds minimum between responses
+
+interface RAGFile {
     id: string;
-    channelId: string;
-    cron: string;
-    prompt: string;
-    enabled: boolean;
-    lastRun?: string;
-    nextRun?: string;
+    filename: string;
+    path: string;
+    addedAt: number;
+    content?: string;
 }
 
-interface MemoryEntry {
-    role: 'user' | 'assistant' | 'system';
-    content: string;
+interface AILog {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    username: string;
+    message: string;
+    response: string;
     timestamp: number;
 }
 
-interface ChannelState {
-    lastInteractionMs: number;
-    lastInterestChimeMs: number;
-    lastAutonomousAttemptMs: number;
-    failedAttempts: number;
-    waitingFor8am: boolean;
-}
-
-const channelStates = new Map<string, ChannelState>();
-const INTEREST_INTERVAL_MIN = 10 * 60 * 1000;
-const INTEREST_INTERVAL_MAX = 30 * 60 * 1000;
-const INACTIVITY_THRESHOLD = 30 * 60 * 1000;
-const RETRY_DELAY = 2 * 60 * 60 * 1000;
-
-async function getPassiveRagContext(guildId: string, query: string): Promise<string> {
-    try {
-        if (!poolRef) return '';
-        
-        await poolRef.query('DELETE FROM passive_rag WHERE expires_at < NOW()');
-        
-        const result = await poolRef.query(
-            `SELECT content, reason, created_at FROM passive_rag 
-             WHERE guild_id = $1 AND expires_at > NOW()
-             ORDER BY created_at DESC LIMIT 5`,
-            [guildId]
-        );
-        
-        if (result.rows.length === 0) return '';
-        
-        return result.rows.map((r: any) => 
-            `[${new Date(r.created_at).toLocaleDateString()}]: "${r.content}" - ${r.reason || 'context'}`
-        ).join('\n');
-    } catch (e) {
-        return '';
-    }
-}
-
-async function addToPassiveRag(guildId: string, content: string, reason: string): Promise<void> {
-    try {
-        if (!poolRef) return;
-        await poolRef.query(
-            `INSERT INTO passive_rag (guild_id, content, reason, expires_at) 
-             VALUES ($1, $2, $3, NOW() + INTERVAL '3 days')`,
-            [guildId, content, reason]
-        );
-    } catch (e) {}
-}
-
-async function logToDB(channelId: string, role: 'user' | 'assistant', content: string) {
-    try {
-        const guildId = apiInstance?.client?.guilds?.cache?.first()?.id || '0';
-        await fetch('http://localhost:8080/api/shell/log-conversation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                server_id: guildId,
-                channel_id: channelId,
-                user_id: '0',
-                user_tag: 'LOOP',
-                role,
-                content
-            })
-        });
-    } catch (e) {}
-}
-
-interface CodeRAGEntry {
-    file_path: string;
-    content: string;
-    embedding: number[];
-}
-
-let apiInstance: any = null;
+let config: AIConfig;
+let userProfiles: UserProfiles = {};
 let poolRef: any = null;
-let aiConfig: AIConfig;
-let codeRAG: CodeRAGEntry[] = [];
-const channelMemory = new Map<string, MemoryEntry[]>();
+let ragFiles: RAGFile[] = [];
+let aiLogs: AILog[] = [];
 
-function loadConfig(): void {
+function loadConfig(): AIConfig {
     try {
-        const configPath = path.join(BASE_DIR, AI_CONFIG_FILE);
         if (fs.existsSync(configPath)) {
-            aiConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        } else {
-            aiConfig = getDefaultConfig();
-            saveConfig();
+            config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            return config;
         }
     } catch (e) {
-        aiConfig = getDefaultConfig();
+        console.error('Failed to load AI config:', e);
     }
-}
-
-function getDefaultConfig(): AIConfig {
-    return {
+    config = {
         enabled: true,
-        model: 'qwen3:0.6b',
+        model: 'glm-5:cloud',
         ollamaUrl: 'http://localhost:11434',
-        systemPrompt: 'You are LOOP, an AI in the Loopconomy Discord bot.',
+        systemPrompt: 'You are a helpful AI assistant.',
         enabledChannels: [],
         scheduledMessages: [],
         embeddingModel: 'qwen3-embedding:0.6b',
-        similarityThreshold: 0.75,
-        maxContextMessages: 50,
+        similarityThreshold: 0.7,
+        maxContextMessages: 100,
         temperature: 0.7,
         top_p: 0.9,
         top_k: 40,
@@ -213,35 +178,112 @@ function getDefaultConfig(): AIConfig {
         repeat_penalty: 1.1,
         num_predict: 256,
         agenticMode: {
-            enabled: false,
+            enabled: true,
             maxContext: 100,
             reasoningEnabled: true,
             timingEnabled: true
         }
     };
+    return config;
 }
 
 function saveConfig(): void {
-    const configPath = path.join(BASE_DIR, AI_CONFIG_FILE);
-    fs.writeFileSync(configPath, JSON.stringify(aiConfig, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
-function isChannelEnabled(channelId: string): boolean {
-    if (!aiConfig.enabled) return false;
-    if (aiConfig.enabledChannels.length === 0) return true;
-    return aiConfig.enabledChannels.includes(channelId);
-}
-
-function addToMemory(channelId: string, role: 'user' | 'assistant', content: string): void {
-    const mem = channelMemory.get(channelId) || [];
-    mem.push({ role, content, timestamp: Date.now() });
-    while (mem.length > MEMORY_LIMIT) {
-        mem.shift();
+function loadUserProfiles(): void {
+    try {
+        if (fs.existsSync(userProfilesPath)) {
+            userProfiles = JSON.parse(fs.readFileSync(userProfilesPath, 'utf8'));
+        }
+    } catch (e) {
+        userProfiles = {};
     }
-    channelMemory.set(channelId, mem);
 }
 
-async function fetchWithTimeout(url: string, options: any, timeoutMs = 5000): Promise<Response> {
+function saveUserProfiles(): void {
+    fs.writeFileSync(userProfilesPath, JSON.stringify(userProfiles, null, 2));
+}
+
+function loadRAGFiles(): void {
+    try {
+        if (fs.existsSync(ragPath)) {
+            ragFiles = JSON.parse(fs.readFileSync(ragPath, 'utf8'));
+        }
+    } catch (e) {
+        ragFiles = [];
+    }
+}
+
+function saveRAGFiles(): void {
+    fs.writeFileSync(ragPath, JSON.stringify(ragFiles, null, 2));
+}
+
+function loadAILogs(): void {
+    try {
+        if (fs.existsSync(logsPath)) {
+            aiLogs = JSON.parse(fs.readFileSync(logsPath, 'utf8'));
+        }
+    } catch (e) {
+        aiLogs = [];
+    }
+}
+
+function saveAILogs(): void {
+    fs.writeFileSync(logsPath, JSON.stringify(aiLogs, null, 2));
+}
+
+function addAILog(guildId: string, channelId: string, userId: string, username: string, message: string, response: string): void {
+    aiLogs.push({ guildId, channelId, userId, username, message, response, timestamp: Date.now() });
+    if (aiLogs.length > 1000) {
+        aiLogs = aiLogs.slice(-1000);
+    }
+    saveAILogs();
+}
+
+function getOrCreateProfile(userId: string, username: string): UserProfile {
+    const isCreator = userId === config.creatorId;
+    if (!userProfiles[userId]) {
+        userProfiles[userId] = {
+            userId,
+            username,
+            messageCount: 0,
+            lastSeen: Date.now(),
+            preferences: {
+                tone: isCreator ? 'chaotic' : 'neutral',
+                responseLength: 'medium'
+            },
+            history: []
+        };
+    } else {
+        userProfiles[userId].username = username;
+        userProfiles[userId].lastSeen = Date.now();
+    }
+    return userProfiles[userId];
+}
+
+function addToUserHistory(userId: string, role: string, content: string): void {
+    const profile = userProfiles[userId];
+    if (profile) {
+        profile.history.push({ role, content, timestamp: Date.now() });
+        profile.messageCount++;
+        if (profile.history.length > config.maxContextMessages) {
+            profile.history = profile.history.slice(-config.maxContextMessages);
+        }
+    }
+}
+
+function buildUserContext(profile: UserProfile): string {
+    return `
+User: ${profile.username}
+Messages sent: ${profile.messageCount}
+Last seen: ${new Date(profile.lastSeen).toLocaleString()}
+Tone preference: ${profile.preferences.tone}
+Response length: ${profile.preferences.responseLength}
+`;
+}
+
+async function fetchWithTimeout(url: string, options: any, timeoutMs = 60000): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -252,756 +294,755 @@ async function fetchWithTimeout(url: string, options: any, timeoutMs = 5000): Pr
     }
 }
 
-async function getEmbedding(text: string): Promise<number[]> {
+async function callOllama(prompt: string, messages: any[], isReasoning = false): Promise<{ response: string; reasoning?: string }> {
+    const model = isReasoning && config.reasoningModel ? config.reasoningModel : config.model;
+    
+    const systemMsg = config.systemPrompt + `\n\nUser Context:\n${Object.values(userProfiles).map(p => buildUserContext(p)).join('\n')}`;
+    
+    const payload: any = {
+        model,
+        messages: [
+            { role: 'system', content: systemMsg },
+            ...messages
+        ],
+        stream: false,
+        options: {
+            temperature: config.temperature,
+            top_p: config.top_p,
+            top_k: config.top_k,
+            min_p: config.min_p,
+            repeat_penalty: config.repeat_penalty,
+            num_predict: config.num_predict
+        }
+    };
+
     try {
-        const response = await fetchWithTimeout(aiConfig.ollamaUrl + '/api/embeddings', {
+        const response = await fetchWithTimeout(`${config.ollamaUrl}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: aiConfig.embeddingModel, prompt: text })
-        }, 10000);
+            body: JSON.stringify(payload)
+        }, 120000);
+
         const data: any = await response.json();
-        return data.embedding || [];
-    } catch (e) {
-        console.log('[AI] Embedding fetch failed, skipping RAG');
-        return [];
-    }
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) return 0;
-    let dot = 0, magA = 0, magB = 0;
-    for (let i = 0; i < a.length; i++) {
-        dot += a[i] * b[i];
-        magA += a[i] * a[i];
-        magB += b[i] * b[i];
-    }
-    return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
-
-async function findRelevantContext(channelId: string, query: string): Promise<MemoryEntry[]> {
-    const mem = channelMemory.get(channelId) || [];
-    if (mem.length === 0) return [];
-    
-    try {
-        const queryEmbedding = await getEmbedding(query);
-        const scored = mem.map(entry => ({
-            entry,
-            score: cosineSimilarity(queryEmbedding, [0]) 
-        }));
         
-        scored.sort((a, b) => b.score - a.score);
-        return scored.slice(0, 10).map(s => s.entry);
-    } catch (e) {
-        return mem.slice(-10);
-    }
-}
-
-async function loadCodeRAG(): Promise<void> {
-    codeRAG = [];
-    const defaultFiles = [
-        'main.js',
-        'addons/copyright/copyright.ts',
-        'commands/gambling/balance.js',
-        'commands/gambling/leaderboard.js'
-    ];
-    
-    for (const file of defaultFiles) {
-        const filePath = path.join(BASE_DIR, file);
-        if (fs.existsSync(filePath)) {
-            try {
-                const content = fs.readFileSync(filePath, 'utf8');
-                const embedding = await getEmbedding(content.substring(0, 5000));
-                codeRAG.push({ file_path: file, content, embedding });
-            } catch (e) {}
-        }
-    }
-    console.log('[AI-RAG] Loaded ' + codeRAG.length + ' entries');
-}
-
-async function searchCodeRAG(query: string): Promise<string> {
-    try {
-        const queryEmbedding = await getEmbedding(query);
-        let best: CodeRAGEntry | null = null;
-        let bestScore = 0;
-        
-        for (const entry of codeRAG) {
-            const score = cosineSimilarity(queryEmbedding, entry.embedding);
-            if (score > bestScore && score > aiConfig.similarityThreshold) {
-                bestScore = score;
-                best = entry;
+        let reasoning: string | undefined;
+        if (isReasoning && config.agenticMode?.reasoningEnabled) {
+            reasoning = data.message?.content || '';
+            const thoughtMatch = reasoning?.match(/<thought>(.*?)<\/thought>/s);
+            if (thoughtMatch) {
+                reasoning = thoughtMatch[1];
             }
         }
-        
-        if (best) {
-            return 'Relevant code from ' + best.file_path + ':\n' + best.content.substring(0, 2000);
-        }
-    } catch (e) {}
-    return '';
-}
 
-async function chatWithAI(messages: any[], systemPrompt: string, channelId: string): Promise<string> {
-    try {
-        const fullMessages = [
-            { role: 'system', content: systemPrompt },
-            ...messages.slice(-20)
-        ];
-        
-        const response = await fetchWithTimeout(aiConfig.ollamaUrl + '/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: aiConfig.model,
-                messages: fullMessages,
-                stream: false,
-                temperature: aiConfig.temperature,
-                top_p: aiConfig.top_p,
-                top_k: aiConfig.top_k,
-                min_p: aiConfig.min_p,
-                repeat_penalty: aiConfig.repeat_penalty,
-                num_predict: aiConfig.num_predict
-            })
-        }, 30000);
-        
-        const data: any = await response.json();
-        const responseContent = data.message?.content || '';
-        // Extract and log CoT reasoning
-        const cotMatch = responseContent.match(/\[REASONING\]([\s\S]*?)\[\/REASONING\]/i);
-        if (cotMatch) {
-            console.log('[AI-CoT] Reasoning:', cotMatch[1].trim().substring(0, 500));
-        }
-        return responseContent;
-    } catch (e) {
-        return 'AI timed out or unavailable';
+        return { 
+            response: data.message?.content || '', 
+            reasoning 
+        };
+    } catch (e: any) {
+        console.error('[AI] Ollama call failed:', e.message);
+        return { response: '', reasoning: '' };
     }
 }
 
-function getRandomInterval(): number {
-    return INTEREST_INTERVAL_MIN + Math.random() * (INTEREST_INTERVAL_MAX - INTEREST_INTERVAL_MIN);
-}
-
-function getChannelState(channelId: string): ChannelState {
-    if (!channelStates.has(channelId)) {
-        channelStates.set(channelId, {
-            lastInteractionMs: Date.now(),
-            lastInterestChimeMs: 0,
-            lastAutonomousAttemptMs: 0,
-            failedAttempts: 0,
-            waitingFor8am: false
-        });
-    }
-    return channelStates.get(channelId)!;
-}
-
-async function shouldChimeIn(channelId: string): Promise<boolean> {
-    const state = getChannelState(channelId);
-    const now = Date.now();
-    
-    if (now - state.lastInteractionMs < INACTIVITY_THRESHOLD) {
-        if (Math.random() < 0.05) {
-            return true;
-        }
-        return false;
-    }
-    
-    if (now - state.lastAutonomousAttemptMs < 5000) {
-        return false;
-    }
-    
-    if (state.waitingFor8am) {
-        const hour = new Date().getHours();
-        if (hour < 8) return false;
-        state.waitingFor8am = false;
-    }
-    
-    if (now - state.lastAutonomousAttemptMs < RETRY_DELAY && state.failedAttempts > 0) {
-        return false;
-    }
-    
-    state.lastAutonomousAttemptMs = now;
-    return true;
-}
-
-async function attemptAutonomousMessage(channelId: string, api: any): Promise<boolean> {
-    const state = getChannelState(channelId);
-    const now = Date.now();
-    
-    try {
-        const thinking = INTEREST_MESSAGES[Math.floor(Math.random() * INTEREST_MESSAGES.length)];
-        
-        const messages = [{
-            role: 'user',
-            content: `Generate a brief, interesting comment (1-2 sentences) to spark conversation. Keep it casual and fun. Start with something like: "${thinking}" Only respond with the message, nothing else.`
-        }];
-        
-        const response = await chatWithAI(messages, getAgenticSystemPrompt(), channelId);
-        const cleanMsg = cleanResponse(response);
-        
-        if (cleanMsg && cleanMsg.length > 0 && cleanMsg.length < 300) {
-            await api.speak(channelId, cleanMsg);
-            state.lastAutonomousAttemptMs = now;
-            state.lastInteractionMs = now;
-            state.failedAttempts = 0;
-            return true;
-        }
-        
-        state.failedAttempts++;
-        if (state.failedAttempts >= 2) {
-            state.waitingFor8am = true;
-            state.failedAttempts = 0;
-        }
-        return false;
-    } catch (e) {
-        state.failedAttempts++;
-        if (state.failedAttempts >= 2) {
-            state.waitingFor8am = true;
-            state.failedAttempts = 0;
-        }
-        return false;
-    }
-}
-
-async function checkAutonomousChime(channelId: string, api: any): Promise<void> {
-    const state = getChannelState(channelId);
-    const now = Date.now();
-    
-    if (now - state.lastInterestChimeMs > getRandomInterval()) {
-        if (Math.random() < 0.05) {
-            try {
-                const messages = [{
-                    role: 'user',
-                    content: `Say something brief and funny (1 sentence max) about a random topic. Keep it casual. Only respond with the message.`
-                }];
-                
-                const response = await chatWithAI(messages, getDefaultSystemPrompt(), channelId);
-                const cleanMsg = cleanResponse(response);
-                
-                if (cleanMsg && cleanMsg.length > 0 && cleanMsg.length < 200) {
-                    await api.speak(channelId, cleanMsg);
-                    state.lastInterestChimeMs = now;
-                }
-            } catch (e) {}
-        }
-    }
-}
-
-function getDefaultSystemPrompt(): string {
-    return `You are LOOP, an AI in the Loopconomy Discord bot. Be helpful, concise, and occasionally witty.
-
-IMPORTANT: Before responding, think silently. Use this format:
-[REASONING]Your internal reasoning here[/REASONING]
-Then respond normally.`;
-}
-
-function getAgenticSystemPrompt(): string {
-    return `You are LOOP, an AI in LISTENING MODE. Be selective about responding. Keep responses short (1-3 sentences).
-
-IMPORTANT: Before responding, think silently. Use this format:
-[REASONING]Your internal reasoning here[/REASONING]
-Then respond normally.`;
-}
-
-function cleanResponse(text: string): string {
-    let cleaned = text;
-    cleaned = cleaned.replace(/\[TOOL_CALL\]/g, '');
-    cleaned = cleaned.replace(/\[\/TOOL_CALL\]/g, '');
-    cleaned = cleaned.replace(/\[\/?(?:REASONING|TOOL_CALL)\]/gi, '');
-    return cleaned.replace(/^\s*\[?\s*YES\s*\]?\s*$/gim, '').replace(/^\s*\[?\s*NO\s*\]?\s*$/gim, '').trim();
-}
-
-function parseToolCalls(response: string): { tool: string; params: any }[] {
-    const calls: { tool: string; params: any }[] = [];
-    const toolRegex = /\[TOOL_CALL\]\s*({[\s\S]*?})\s*\[\/TOOL_CALL\]/gi;
+function parseToolsFromResponse(response: string): { tool: string; args: any }[] {
+    const tools: { tool: string; args: any }[] = [];
+    const toolPattern = /<tool>(.*?)<\/tool>/gs;
     let match;
     
-    while ((match = toolRegex.exec(response)) !== null) {
+    while ((match = toolPattern.exec(response)) !== null) {
         try {
-            const parsed = JSON.parse(match[1]);
-            if (parsed.tool) {
-                calls.push(parsed);
+            const toolData = JSON.parse(match[1]);
+            if (toolData.name && toolData.args) {
+                tools.push({ tool: toolData.name, args: toolData.args });
             }
         } catch (e) {}
     }
     
-    return calls;
+    return tools;
 }
 
-async function executeToolCall(tool: string, params: any, channelId: string): Promise<{ success: boolean; result: any; funMessage: string }> {
-    const funMessage = FUN_MESSAGES[tool] || 'Executing ' + tool + '...';
+async function executeTool(tool: string, args: any, message: any, api: any): Promise<string> {
+    const pool = poolRef || api.client?.pool;
     
-    try {
-        let endpoint = '';
-        let body: any = {};
-        
-        switch (tool) {
-            case 'send_message':
-                endpoint = '/api/shell/say';
-                body = { channel: params.channel || channelId, message: params.message };
-                break;
-            case 'broadcast':
-                endpoint = '/api/shell/broadcast';
-                body = { message: params.message };
-                break;
-            case 'get_balance':
-                endpoint = '/api/shell/balance';
-                body = { user: params.user };
-                break;
-            case 'add_coins':
-                endpoint = '/api/shell/addcoins';
-                body = { user: params.user, amount: parseInt(params.amount) };
-                break;
-            case 'remove_coins':
-                endpoint = '/api/shell/removecoins';
-                body = { user: params.user, amount: parseInt(params.amount) };
-                break;
-            case 'get_ai_balance':
-                endpoint = '/api/shell/ai-balance';
-                body = { server_id: apiInstance?.client?.guilds?.cache?.first()?.id };
-                break;
-            case 'play_blackjack':
-            case 'play_poker':
-            case 'play_roulette':
-            case 'play_slots':
-            case 'play_keno':
-            case 'play_russianroulette':
-            case 'play_wheel':
-                endpoint = '/api/shell/game-play';
-                body = {
-                    game_type: tool.replace('play_', ''),
-                    bet_amount: parseInt(params.bet_amount) || 100,
-                    bet_type: params.bet_type,
-                    specific_bet: params.specific_bet,
-                    pick_count: params.pick_count,
-                    picks: params.picks,
-                    player_choice: params.player_choice,
-                    server_id: apiInstance?.client?.guilds?.cache?.first()?.id
-                };
-                break;
-            case 'mute_user':
-                endpoint = '/api/shell/mute';
-                body = { user: params.user, time: params.time || '10m', reason: params.reason || 'Muted via AI' };
-                break;
-            case 'unmute_user':
-                endpoint = '/api/shell/unmute';
-                body = { user: params.user };
-                break;
-            case 'search_passive_context':
-                try {
-                    const guildId = apiInstance?.client?.guilds?.cache?.first()?.id;
-                    const context = await getPassiveRagContext(guildId, params.query || '');
-                    return { success: true, result: { context }, funMessage: 'Searching passive memory...' };
-                } catch (e) {
-                    return { success: false, result: { error: 'Failed to search context' }, funMessage };
-                }
-            case 'get_status':
-                endpoint = '/api/shell/status';
-                break;
-            case 'should_respond':
-                return { success: true, result: { shouldRespond: true, reason: 'Context relevant' }, funMessage };
-            default:
-                return { success: false, result: { error: 'Unknown tool' }, funMessage };
-        }
-        
-        const response = await fetch('http://localhost:8080' + endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        
-        const result = await response.json();
-        return { success: response.ok, result, funMessage };
-    } catch (e: any) {
-        return { success: false, result: { error: e.message }, funMessage };
-    }
-}
-
-async function processToolCalls(calls: { tool: string; params: any }[], channelId: string): Promise<string> {
-    let results: string[] = [];
-    
-    for (const call of calls) {
-        const { success, result, funMessage } = await executeToolCall(call.tool, call.params, channelId);
-        console.log('[AI-TOOL] ' + funMessage);
-        
-        if (call.tool === 'send_message') {
-            results.push('Message sent');
-        } else if (call.tool === 'get_balance') {
-            results.push('Balance: ' + (result.coins || 0) + ' coins');
-        } else if (success) {
-            results.push(JSON.stringify(result).substring(0, 100));
-        } else {
-            results.push('Error: ' + (result.error || 'Unknown'));
-        }
-    }
-    
-    return results.join('\n');
-}
-
-function parseCron(cron: string): { hours: number; minutes: number } | null {
-    const match = cron.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) return null;
-    return { hours: parseInt(match[1]), minutes: parseInt(match[2]) };
-}
-
-function getNextRun(cron: string): Date {
-    const parsed = parseCron(cron);
-    if (!parsed) return new Date();
-    
-    const now = new Date();
-    const next = new Date();
-    next.setHours(parsed.hours, parsed.minutes, 0, 0);
-    
-    if (next <= now) {
-        next.setDate(next.getDate() + 1);
-    }
-    
-    return next;
-}
-
-async function checkScheduledMessages(): Promise<void> {
-    if (!aiConfig.scheduledMessages.length) return;
-    
-    const now = Date.now();
-    
-    for (const msg of aiConfig.scheduledMessages) {
-        if (!msg.enabled) continue;
-        
-        const nextRun = getNextRun(msg.cron);
-        if (nextRun.getTime() <= now) {
+    switch (tool) {
+        case 'send_message': {
+            const channelId = args.channel_id || message.channelId;
+            const content = args.content || args.message;
             try {
-                const context = await findRelevantContext(msg.channelId, msg.prompt);
-                const contextText = context.length > 0 ? '\nContext: ' + context.map(c => c.content).join('\n') : '';
-                
-                const messages = [{ role: 'user', content: msg.prompt + contextText }];
-                const response = await chatWithAI(messages, getDefaultSystemPrompt(), msg.channelId);
-                
-                if (response && !response.includes('Error')) {
-                    await apiInstance.speak(msg.channelId, cleanResponse(response));
-                    msg.lastRun = new Date().toISOString();
-                    saveConfig();
+                const channel = message.guild.channels.cache.get(channelId);
+                if (channel) {
+                    await channel.send(content);
+                    return 'Message sent successfully';
                 }
-            } catch (e) {
-                console.error('[AI] Scheduled message error:', e);
+            } catch (e: any) {
+                return `Failed to send message: ${e.message}`;
+            }
+            break;
+        }
+        
+        case 'get_balance': {
+            try {
+                const balance = await api.getBalance(args.user_id || message.author.id);
+                return `User balance: ${balance} coins`;
+            } catch (e: any) {
+                return `Failed to get balance: ${e.message}`;
             }
         }
-    }
-}
-
-function startScheduler(): void {
-    setInterval(() => {
-        checkScheduledMessages();
-    }, 60000);
-}
-
-function startAutonomousScheduler(api: any) {
-    setInterval(async () => {
-        if (!aiConfig.enabled || !aiConfig.agenticMode.enabled) return;
         
-        try {
-            const client = api.client;
-            if (!client?.guilds?.cache) return;
+        case 'add_coins': {
+            try {
+                const amount = args.amount || 100;
+                await api.addCoins(args.user_id || message.author.id, amount);
+                return `Added ${amount} coins successfully`;
+            } catch (e: any) {
+                return `Failed to add coins: ${e.message}`;
+            }
+        }
+        
+        case 'remove_coins': {
+            try {
+                const amount = args.amount || 100;
+                await api.removeCoins(args.user_id || message.author.id, amount);
+                return `Removed ${amount} coins successfully`;
+            } catch (e: any) {
+                return `Failed to remove coins: ${e.message}`;
+            }
+        }
+        
+        case 'get_copyrights': {
+            if (!pool) return 'Database not available';
+            try {
+                const result = await pool.query(
+                    'SELECT * FROM copyrights WHERE guild_id = $1 ORDER BY created_at DESC LIMIT 10',
+                    [message.guildId]
+                );
+                if (result.rows.length === 0) return 'No copyrights in this server';
+                return 'Copyrights: ' + result.rows.map((r: any) => `"${r.term}" (${r.fine_amount} coins)`).join(', ');
+            } catch (e: any) {
+                return `Failed to get copyrights: ${e.message}`;
+            }
+        }
+        
+        case 'play_slots': {
+            const bet = args.bet || 100;
+            const balance = await api.getBalance(message.author.id);
+            if (balance < bet) return 'Insufficient funds';
             
-            for (const guild of client.guilds.cache.values()) {
-                if (!guild.available) continue;
+            const symbols = ['🎉', '🧨', '🀄', '🎰', '🔮', '⚧️', '♂️', '♀️'];
+            const spin = [
+                symbols[Math.floor(Math.random() * symbols.length)],
+                symbols[Math.floor(Math.random() * symbols.length)],
+                symbols[Math.floor(Math.random() * symbols.length)]
+            ];
+            
+            let multiplier = 0;
+            if (spin[0] === spin[1] && spin[1] === spin[2]) multiplier = 5;
+            else if (spin[0] === spin[1] || spin[1] === spin[2]) multiplier = 2;
+            else if (spin[0] === spin[2]) multiplier = 1.5;
+            
+            const winAmount = Math.floor(bet * multiplier);
+            if (winAmount > 0) await api.addCoins(message.author.id, winAmount);
+            else await api.removeCoins(message.author.id, bet);
+            
+            return `Slots: ${spin.join(' ')} | ${multiplier > 0 ? `WON ${winAmount} coins!` : 'Lost'}`;
+        }
+        
+        case 'play_keno': {
+            const bet = args.bet || 100;
+            const balance = await api.getBalance(message.author.id);
+            if (balance < bet) return 'Insufficient funds';
+            
+            const picks = args.picks || 5;
+            const numRange = 80;
+            
+            const playerNumbers: number[] = [];
+            const drawnNumbers: number[] = [];
+            
+            for (let i = 0; i < picks; i++) {
+                playerNumbers.push(Math.floor(Math.random() * numRange) + 1);
+            }
+            
+            for (let i = 0; i < 20; i++) {
+                drawnNumbers.push(Math.floor(Math.random() * numRange) + 1);
+            }
+            
+            const matches = playerNumbers.filter(n => drawnNumbers.includes(n)).length;
+            const multiplier = matches >= 3 ? Math.pow(2, matches - 2) : 0;
+            
+            const winAmount = Math.floor(bet * multiplier);
+            if (winAmount > 0) await api.addCoins(message.author.id, winAmount);
+            else await api.removeCoins(message.author.id, bet);
+            
+            return `Keno - Your picks: [${playerNumbers.join(', ')}] | Drawn: [${drawnNumbers.join(', ')}] | Matches: ${matches} | ${winAmount > 0 ? `WON ${winAmount} coins!` : 'Lost'}`;
+        }
+        
+        case 'broadcast': {
+            try {
+                if (!api.client) return 'Client not available';
+                const content = args.content || args.message;
+                let sentCount = 0;
                 
-                for (const channel of guild.channels.cache.values()) {
-                    if (channel.type !== 0) continue;
-                    if (!isChannelEnabled(channel.id)) continue;
-                    
-                    const state = getChannelState(channel.id);
-                    
-                    await checkAutonomousChime(channel.id, api);
-                    
-                    if (Date.now() - state.lastInteractionMs > INACTIVITY_THRESHOLD) {
-                        await attemptAutonomousMessage(channel.id, api);
+                for (const guild of api.client.guilds.cache.values()) {
+                    try {
+                        const channel = guild.systemChannel || guild.channels.cache.find((ch: any) => ch.isTextBased());
+                        if (channel) {
+                            await channel.send(content);
+                            sentCount++;
+                        }
+                    } catch (e) {}
+                }
+                
+                return `Broadcast sent to ${sentCount} servers`;
+            } catch (e: any) {
+                return `Failed to broadcast: ${e.message}`;
+            }
+        }
+        
+        case 'search_passive_context': {
+            const query = args.query || '';
+            if (!query) return 'No query provided';
+            
+            const contextResults: string[] = [];
+            const queryLower = query.toLowerCase();
+            
+            for (const profile of Object.values(userProfiles)) {
+                for (const msg of profile.history) {
+                    if (msg.content.toLowerCase().includes(queryLower)) {
+                        contextResults.push(`User ${profile.username}: ${msg.content}`);
+                        if (contextResults.length >= 5) break;
                     }
                 }
+                if (contextResults.length >= 5) break;
             }
-        } catch (e) {
-            console.error('[AI] Autonomous scheduler error:', e);
+            
+            if (contextResults.length === 0) {
+                const recentLogs = aiLogs.filter(l => l.message.toLowerCase().includes(queryLower)).slice(-5);
+                if (recentLogs.length > 0) {
+                    return 'Found in logs: ' + recentLogs.map(l => l.message).join(' | ');
+                }
+                return 'No matching context found';
+            }
+            
+            return 'Found context: ' + contextResults.join(' | ');
         }
-    }, 60000);
+        
+        case 'mute_user': {
+            if (!message.guild) return 'Guild not available';
+            try {
+                const member = await message.guild.members.fetch(args.user_id);
+                if (member) {
+                    const duration = args.duration || 60;
+                    const reason = args.reason || 'Muted by AI';
+                    await member.timeout(duration * 1000, reason);
+                    return `Muted user for ${duration} minutes`;
+                }
+            } catch (e: any) {
+                return `Failed to mute: ${e.message}`;
+            }
+            break;
+        }
+        
+        case 'get_social_credit': {
+            if (!pool) return 'Database not available';
+            try {
+                const userId = args.user_id || message.author.id;
+                const result = await pool.query(
+                    'SELECT credit_score, social_credits, rank FROM social_credits WHERE user_id = $1',
+                    [userId]
+                );
+                if (result.rows.length === 0) return 'No social credit record found for this user';
+                const row = result.rows[0];
+                return `Social Credit: Score ${row.credit_score}, Credits ${row.social_credits}, Rank: ${row.rank}`;
+            } catch (e: any) {
+                return `Failed to get social credit: ${e.message}`;
+            }
+        }
+        
+        case 'get_debt_status': {
+            if (!pool) return 'Database not available';
+            try {
+                const userId = args.user_id || message.author.id;
+                const result = await pool.query(
+                    'SELECT amount, remaining, interest_rate, due_date FROM bank_loans WHERE user_id = $1 AND remaining > 0',
+                    [userId]
+                );
+                if (result.rows.length === 0) return 'No outstanding debts';
+                const loan = result.rows[0];
+                return `Debt: ${loan.remaining}/${loan.amount} owed, ${(loan.interest_rate * 100).toFixed(1)}% APR, due ${loan.due_date}`;
+            } catch (e: any) {
+                return `Failed to get debt status: ${e.message}`;
+            }
+        }
+        
+        case 'check_credit_score': {
+            if (!pool) return 'Database not available';
+            try {
+                const userId = args.user_id || message.author.id;
+                const result = await pool.query(
+                    'SELECT credit_score, rank FROM social_credits WHERE user_id = $1',
+                    [userId]
+                );
+                if (result.rows.length === 0) return 'No credit score found (likely no credit history)';
+                const row = result.rows[0];
+                return `Credit Score: ${row.credit_score} (${row.rank})`;
+            } catch (e: any) {
+                return `Failed to check credit: ${e.message}`;
+            }
+        }
+        
+        case 'get_bank_balance': {
+            if (!pool) return 'Database not available';
+            try {
+                const userId = args.user_id || message.author.id;
+                const serverId = message.guildId;
+                const result = await pool.query(
+                    'SELECT balance, account_type FROM bank_accounts WHERE user_id = $1 AND server_id = $2',
+                    [userId, serverId]
+                );
+                if (result.rows.length === 0) return 'No bank account found';
+                const acc = result.rows[0];
+                return `Bank: ${acc.account_type} account, $${acc.balance.toFixed(2)}`;
+            } catch (e: any) {
+                return `Failed to get bank balance: ${e.message}`;
+            }
+        }
+    }
+    
+    return 'Unknown tool';
+}
+
+async function processAIResponse(message: any, api: any): Promise<void> {
+    if (!config.enabled) return;
+    if (!config.enabledChannels.includes(message.channelId)) return;
+    if (message.author.bot) return;
+    
+    const now = Date.now();
+    if (now - lastResponseTime < RESPONSE_COOLDOWN) {
+        return;
+    }
+    
+    console.log(`[AI] Message received from ${message.author.username} in channel ${message.channelId}`);
+    
+    const userId = message.author.id;
+    const username = message.author.username;
+    const content = message.content.trim();
+    
+    if (!content) return;
+    
+    const profile = getOrCreateProfile(userId, username);
+    addToUserHistory(userId, 'user', content);
+    
+    let thinkingMsg: any = null;
+    let contextMessages: any[] = [];
+    
+    try {
+        if (message.channel && message.channel.messages) {
+            const recentMessages = await message.channel.messages.fetch({ limit: 10 });
+            const nonBotMessages = recentMessages.filter((m: any) => !m.author.bot && m.id !== message.id);
+            contextMessages = nonBotMessages.slice(0, 5).reverse().map((m: any) => ({
+                role: m.author.id === message.client.user?.id ? 'assistant' : 'user',
+                content: `${m.author.username}: ${m.content}`
+            }));
+        }
+        
+        const shouldRespond = await pass1ShouldRespond(content, profile, contextMessages);
+        if (!shouldRespond) {
+            return;
+        }
+        
+        const messages = profile.history.slice(-config.maxContextMessages).map(h => ({
+            role: h.role,
+            content: h.content
+        }));
+        messages.push(...contextMessages);
+        messages.push({ role: 'user', content });
+        
+        let reasoningResult = '';
+        if (config.agenticMode?.reasoningEnabled) {
+            const thinkingMsgText = getRandomThinkingMessage();
+            thinkingMsg = await message.channel.send(`🤔 ${thinkingMsgText}`);
+            const reasoningResponse = await pass2Reason(content, messages);
+            reasoningResult = reasoningResponse.reasoning || '';
+        }
+        
+        let toolCalls: { tool: string; args: any }[] = [];
+        if (config.agenticMode?.enabled) {
+            if (thinkingMsg) await thinkingMsg.delete().catch(() => {});
+            thinkingMsg = await message.channel.send(`⚙️ ${getToolMessage('default')}`);
+            const toolResponse = await pass3UseTools(content, messages, reasoningResult);
+            toolCalls = parseToolsFromResponse(toolResponse);
+            
+            for (const call of toolCalls.slice(0, 3)) {
+                const result = await executeTool(call.tool, call.args, message, api);
+                addToUserHistory(userId, 'system', `[Tool: ${call.tool}] ${result}`);
+                if (thinkingMsg) await thinkingMsg.edit(`⚙️ ${getToolMessage(call.tool)}`).catch(() => {});
+            }
+        }
+        
+        const finalMessages = [
+            ...messages,
+            ...(reasoningResult ? [{ role: 'system', content: `Reasoning: ${reasoningResult}` }] : []),
+            ...toolCalls.map(t => ({ role: 'system', content: `[Executed tool: ${t.tool}]` }))
+        ];
+        
+        const finalResponse = await pass4Finalize(content, finalMessages);
+        const cleanedResponse = finalResponse.replace(/<[^>]+>/g, '').trim();
+        
+        if (cleanedResponse) {
+            if (thinkingMsg) await thinkingMsg.delete().catch(() => {});
+            await message.reply(cleanedResponse);
+            addToUserHistory(userId, 'assistant', cleanedResponse);
+            addAILog(message.guildId, message.channelId, userId, username, content, cleanedResponse);
+            
+            lastResponseTime = Date.now();
+            responseCount++;
+        }
+        
+    } catch (e: any) {
+        console.error('[AI] Processing error:', e);
+        if (message && message.reply) {
+            await message.reply('Sorry, I encountered an error processing your message.').catch(() => {});
+        }
+    } finally {
+        if (thinkingMsg) await thinkingMsg.delete().catch(() => {});
+        saveUserProfiles();
+    }
+}
+
+async function pass1ShouldRespond(content: string, profile: UserProfile, contextMessages: any[] = []): Promise<boolean> {
+    const contentLower = content.toLowerCase();
+    const isMention = contentLower.includes('@ai') || contentLower.includes('ai') || contentLower.includes('loop');
+    const isQuestion = contentLower.includes('?');
+    const isCommand = contentLower.startsWith('!') || contentLower.startsWith('/');
+    
+    if (isMention || isQuestion || isCommand) {
+        return true;
+    }
+    
+    const casualPatterns = [
+        /^[aeiou]+$/i,
+        /^(haha|lol|💀|😂|🤣)+$/i,
+        /^(ok|okay|cool|nice|👍|👍)$/i,
+        /^(yeah|no|yea|yep|nope)$/i,
+        /^(sup|hey|hi|hello)$/i,
+    ];
+    
+    for (const pattern of casualPatterns) {
+        if (pattern.test(content.trim())) {
+            return false;
+        }
+    }
+    
+    const randomThreshold = 0.3;
+    return Math.random() < randomThreshold;
+}
+
+async function pass2Reason(content: string, messages: any[]): Promise<{ reasoning: string; strategy: string }> {
+    const prompt = `Analyze this message and determine how to respond. Use <thought> tags.\n\nMessage: "${content}"`;
+    
+    const result = await callOllama(prompt, messages, true);
+    return {
+        reasoning: result.reasoning || result.response,
+        strategy: 'standard'
+    };
+}
+
+async function pass3UseTools(content: string, messages: any[], reasoning: string): Promise<string> {
+    const toolsDescription = `
+Available tools (use <tool> tags):
+- send_message: {"name": "send_message", "args": {"channel_id": "...", "content": "..."}}
+- get_balance: {"name": "get_balance", "args": {"user_id": "..."}}
+- add_coins: {"name": "add_coins", "args": {"user_id": "...", "amount": 100}}
+- remove_coins: {"name": "remove_coins", "args": {"user_id": "...", "amount": 100}}
+- get_copyrights: {"name": "get_copyrights", "args": {}}
+- play_slots: {"name": "play_slots", "args": {"bet": 100}}
+- play_keno: {"name": "play_keno", "args": {"bet": 100, "picks": 5}}
+- broadcast: {"name": "broadcast", "args": {"content": "..."}}
+- search_passive_context: {"name": "search_passive_context", "args": {"query": "..."}}
+- mute_user: {"name": "mute_user", "args": {"user_id": "...", "duration": 60, "reason": "..."}}
+- get_social_credit: {"name": "get_social_credit", "args": {"user_id": "..."}}
+- get_debt_status: {"name": "get_debt_status", "args": {"user_id": "..."}}
+- check_credit_score: {"name": "check_credit_score", "args": {"user_id": "..."}}
+- get_bank_balance: {"name": "get_bank_balance", "args": {"user_id": "..."}}
+`;
+    
+    const prompt = `Message: "${content}"\n\n${toolsDescription}`;
+    
+    const result = await callOllama(prompt, messages, false);
+    return result.response;
+}
+
+async function pass4Finalize(content: string, messages: any[]): Promise<string> {
+    const prompt = `Respond to: "${content}"\n\nClean response only, no tags or formatting.`;
+    
+    const result = await callOllama(prompt, messages, false);
+    return result.response;
+}
+
+function parseScheduleTime(timeStr: string): number {
+    const match = timeStr.match(/^(\d+)([smhd])$/);
+    if (!match) return 0;
+    
+    const value = parseInt(match[1]);
+    const unit = match[2];
+    
+    switch (unit) {
+        case 's': return value * 1000;
+        case 'm': return value * 60 * 1000;
+        case 'h': return value * 60 * 60 * 1000;
+        case 'd': return value * 24 * 60 * 60 * 1000;
+        default: return 0;
+    }
 }
 
 export const commands = [
     {
         data: new SlashCommandBuilder()
-            .setName('ai')
-            .setDescription('Chat with the AI')
-            .addStringOption(opt =>
-                opt.setName('message')
-                    .setDescription('Your message to the AI')
+            .setName('ai-toggle')
+            .setDescription('Toggle AI assistant')
+            .addBooleanOption(opt =>
+                opt.setName('enabled')
+                    .setDescription('Enable or disable')
                     .setRequired(true)
             ),
         async execute(interaction: any, api: any) {
-            if (!aiConfig.enabled) {
-                return interaction.reply({ content: 'AI is currently disabled', ephemeral: true });
-            }
-            
-            const channelId = interaction.channelId;
-            if (!isChannelEnabled(channelId)) {
-                return interaction.reply({ content: 'AI is not enabled in this channel', ephemeral: true });
-            }
-            
-            const userMessage = interaction.options.getString('message');
-            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
-            
-            await interaction.reply(thinking);
-            
-            try {
-                addToMemory(channelId, 'user', userMessage);
-                
-                const recent = channelMemory.get(channelId) || [];
-                const contextMessages = recent.map(m => ({ role: m.role, content: m.content }));
-                
-                const ragContext = await searchCodeRAG(userMessage);
-                const contextText = ragContext ? '\n\nRelevant knowledge:\n' + ragContext : '';
-                
-                const messages = [
-                    ...contextMessages,
-                    { role: 'user', content: userMessage + contextText }
-                ];
-                
-                const systemPrompt = getDefaultSystemPrompt();
-                const response = await chatWithAI(messages, systemPrompt, channelId);
-                
-                const toolCalls = parseToolCalls(response);
-                let finalResponse = cleanResponse(response);
-                
-                if (toolCalls.length > 0) {
-                    const toolResults = await processToolCalls(toolCalls, channelId);
-                    finalResponse = cleanResponse(response);
-                }
-                
-                if (finalResponse) {
-                    await interaction.editReply(finalResponse);
-                    addToMemory(channelId, 'assistant', finalResponse);
-                } else {
-                    await interaction.editReply('(No response)');
-                }
-            } catch (e: any) {
-                await interaction.editReply('Error: ' + e.message);
-            }
-        }
-    },
-    {
-        data: new SlashCommandBuilder()
-            .setName('ai-help')
-            .setDescription('Show AI help and commands'),
-        async execute(interaction: any, api: any) {
-            const embed = new EmbedBuilder()
-                .setTitle('LOOP AI - Command Center')
-                .setColor('#6366f1')
-                .setThumbnail('https://cdn.discordapp.com/attachments/123456789/loopy_ai.png')
-                .setDescription('Welcome to the LOOP AI Assistant! Here are all available commands:')
-                .addFields(
-                    { name: '💬 /ai <message>', value: 'Chat directly with the AI', inline: true },
-                    { name: '🔄 /ai-toggle', value: 'Enable/disable AI in this channel', inline: true },
-                    { name: '🤖 /ai-model', value: 'Check or change the AI model', inline: true },
-                    { name: '⚙️ /ai-manage', value: 'Full AI settings management', inline: true },
-                    { name: '🌀 /ai-agentic', value: 'Toggle autonomous listening mode', inline: true },
-                    { name: '📅 /ai-schedule', value: 'Schedule AI messages', inline: true },
-                    { name: '📚 /ai-rag', value: 'Manage knowledge base', inline: true },
-                    { name: '📜 /ai-logs', value: 'View conversation/game history', inline: true },
-                    { name: '🎛️ /ai-config', value: 'Advanced configuration panel', inline: true }
-                )
-                .setFooter({ text: 'Use /ai <message> to start chatting!' })
-                .setTimestamp();
-            
-            const actionRow = {
-                type: 1,
-                components: [
-                    { type: 2, style: 5, label: 'Invite Bot', url: 'https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID' },
-                    { type: 2, style: 5, label: 'Support Server', url: 'https://discord.gg/YOUR_INVITE' }
-                ]
-            };
-            
-            await interaction.reply({ embeds: [embed], components: [actionRow], ephemeral: true });
-        }
-    },
-    {
-        data: new SlashCommandBuilder()
-            .setName('ai-toggle')
-            .setDescription('Enable/disable AI in this channel'),
-        async execute(interaction: any, api: any) {
-            const channelId = interaction.channelId;
-            const idx = aiConfig.enabledChannels.indexOf(channelId);
-            
-            let enabled: boolean;
-            if (idx === -1) {
-                aiConfig.enabledChannels.push(channelId);
-                enabled = true;
-            } else {
-                aiConfig.enabledChannels.splice(idx, 1);
-                enabled = false;
-            }
-            
+            config.enabled = interaction.options.getBoolean('enabled');
             saveConfig();
-            
-            const embed = new EmbedBuilder()
-                .setTitle(enabled ? '✅ AI Enabled' : '🚫 AI Disabled')
-                .setColor(enabled ? '#22c55e' : '#ef4444')
-                .setDescription(enabled 
-                    ? `AI is now **enabled** in this channel. Users can chat with me using \`/ai <message>\`!`
-                    : `AI has been **disabled** in this channel. Use \`/ai-toggle\` again to re-enable.`
-                )
-                .addFields(
-                    { name: 'Channel', value: `<#${channelId}>`, inline: true },
-                    { name: 'Status', value: enabled ? '🟢 Active' : '🔴 Inactive', inline: true },
-                    { name: 'Total Channels', value: `${aiConfig.enabledChannels.length}`, inline: true }
-                )
-                .setTimestamp();
-            
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await interaction.reply({ content: `AI assistant ${config.enabled ? 'enabled' : 'disabled'}`, ephemeral: true });
         }
     },
     {
         data: new SlashCommandBuilder()
             .setName('ai-model')
-            .setDescription('Check or set AI model')
+            .setDescription('Set AI model')
             .addStringOption(opt =>
                 opt.setName('model')
-                    .setDescription('Model name (leave empty to check current)')
-                    .setRequired(false)
+                    .setDescription('Model name')
+                    .setRequired(true)
             ),
         async execute(interaction: any, api: any) {
-            const model = interaction.options.getString('model');
-            
-            if (model) {
-                aiConfig.model = model;
+            config.model = interaction.options.getString('model');
+            saveConfig();
+            await interaction.reply({ content: `Model set to ${config.model}`, ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-reasoning-model')
+            .setDescription('Set reasoning model')
+            .addStringOption(opt =>
+                opt.setName('model')
+                    .setDescription('Reasoning model name')
+                    .setRequired(true)
+            ),
+        async execute(interaction: any, api: any) {
+            config.reasoningModel = interaction.options.getString('model');
+            config.agenticMode.reasoningEnabled = true;
+            saveConfig();
+            await interaction.reply({ content: `Reasoning model set to ${config.reasoningModel}`, ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-channel')
+            .setDescription('Add AI to a channel')
+            .addChannelOption(opt =>
+                opt.setName('channel')
+                    .setDescription('Channel to enable')
+                    .setRequired(true)
+            ),
+        async execute(interaction: any, api: any) {
+            const channel = interaction.options.getChannel('channel');
+            if (!config.enabledChannels.includes(channel.id)) {
+                config.enabledChannels.push(channel.id);
                 saveConfig();
-                
-                const embed = new EmbedBuilder()
-                    .setTitle('✅ Model Updated')
-                    .setColor('#22c55e')
-                    .setDescription(`AI model has been changed to **${model}**`)
-                    .addFields(
-                        { name: 'New Model', value: `\`${model}\``, inline: true },
-                        { name: 'Embedding Model', value: `\`${aiConfig.embeddingModel}\``, inline: true },
-                        { name: 'Ollama URL', value: `\`${aiConfig.ollamaUrl}\``, inline: false }
-                    )
-                    .setTimestamp();
-                
-                await interaction.reply({ embeds: [embed], ephemeral: true });
-            } else {
-                const embed = new EmbedBuilder()
-                    .setTitle('🤖 Current AI Model')
-                    .setColor('#6366f1')
-                    .setDescription('Here are the current AI configuration settings:')
-                    .addFields(
-                        { name: 'Chat Model', value: `\`${aiConfig.model}\``, inline: true },
-                        { name: 'Embedding Model', value: `\`${aiConfig.embeddingModel}\``, inline: true },
-                        { name: 'Ollama Endpoint', value: `\`${aiConfig.ollamaUrl}\``, inline: false },
-                        { name: 'Similarity Threshold', value: `${aiConfig.similarityThreshold}`, inline: true },
-                        { name: 'Max Context', value: `${aiConfig.maxContextMessages} messages`, inline: true }
-                    )
-                    .setFooter({ text: 'Use /ai-model <name> to change the model' })
-                    .setTimestamp();
-                
-                await interaction.reply({ embeds: [embed], ephemeral: true });
             }
+            await interaction.reply({ content: `AI enabled in ${channel}`, ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-status')
+            .setDescription('Check AI status'),
+        async execute(interaction: any, api: any) {
+            const embed = new EmbedBuilder()
+                .setTitle('🤖 AI Status')
+                .setColor('#0099ff')
+                .addFields(
+                    { name: 'Enabled', value: config.enabled ? '🟢 Yes' : '🔴 No', inline: true },
+                    { name: 'Model', value: config.model, inline: true },
+                    { name: 'Reasoning Model', value: config.reasoningModel || 'Not set', inline: true },
+                    { name: 'Agentic Mode', value: config.agenticMode?.enabled ? '🟢' : '🔴', inline: true },
+                    { name: 'Channels', value: config.enabledChannels.length.toString(), inline: true }
+                )
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [embed] });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-set-prompt')
+            .setDescription('Set system prompt')
+            .addStringOption(opt =>
+                opt.setName('prompt')
+                    .setDescription('System prompt')
+                    .setRequired(true)
+            ),
+        async execute(interaction: any, api: any) {
+            config.systemPrompt = interaction.options.getString('prompt');
+            saveConfig();
+            await interaction.reply({ content: 'System prompt updated', ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-profile')
+            .setDescription('View your user profile'),
+        async execute(interaction: any, api: any) {
+            const profile = userProfiles[interaction.user.id];
+            if (!profile) {
+                return interaction.reply({ content: 'No profile found', ephemeral: true });
+            }
+            
+            const embed = new EmbedBuilder()
+                .setTitle('👤 Your AI Profile')
+                .setColor('#0099ff')
+                .addFields(
+                    { name: 'Username', value: profile.username, inline: true },
+                    { name: 'Messages', value: profile.messageCount.toString(), inline: true },
+                    { name: 'Tone', value: profile.preferences.tone, inline: true },
+                    { name: 'Response Length', value: profile.preferences.responseLength, inline: true }
+                )
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [embed] });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-config')
+            .setDescription('Configure AI settings')
+            .addStringOption(opt =>
+                opt.setName('option')
+                    .setDescription('Option to configure')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'Agentic Mode', value: 'agentic' },
+                        { name: 'Reasoning', value: 'reasoning' },
+                        { name: 'Temperature', value: 'temperature' },
+                        { name: 'Max Context', value: 'maxcontext' }
+                    )
+            )
+            .addStringOption(opt =>
+                opt.setName('value')
+                    .setDescription('Value (true/false/number)')
+                    .setRequired(true)
+            ),
+        async execute(interaction: any, api: any) {
+            const option = interaction.options.getString('option');
+            const value = interaction.options.getString('value');
+            
+            switch (option) {
+                case 'agentic':
+                    config.agenticMode.enabled = value === 'true';
+                    break;
+                case 'reasoning':
+                    config.agenticMode.reasoningEnabled = value === 'true';
+                    break;
+                case 'temperature':
+                    config.temperature = parseFloat(value) || 0.7;
+                    break;
+                case 'maxcontext':
+                    config.maxContextMessages = parseInt(value) || 100;
+                    break;
+            }
+            
+            saveConfig();
+            await interaction.reply({ content: `Updated ${option} to ${value}`, ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder()
+            .setName('ai-help')
+            .setDescription('Show AI help with all commands and tools'),
+        async execute(interaction: any, api: any) {
+            const embed = new EmbedBuilder()
+                .setTitle('🤖 AI Help')
+                .setColor('#0099ff')
+                .addFields(
+                    { name: 'Basic Commands', value: `
+• /ai-toggle - Enable/disable AI
+• /ai-status - View AI status
+• /ai-help - This help menu
+• /ai-profile - View your user profile`, inline: false },
+                    { name: 'Configuration', value: `
+• /ai-model - Set AI model
+• /ai-reasoning-model - Set reasoning model
+• /ai-set-prompt - Set system prompt
+• /ai-config - Configure AI settings
+• /ai-channel - Add AI to channel`, inline: false },
+                    { name: 'Management', value: `
+• /ai-manage - Full settings management
+• /ai-agentic - Toggle agentic mode
+• /ai-schedule - Schedule AI messages
+• /ai-rag - Manage RAG knowledge base
+• /ai-logs - View conversation logs`, inline: false },
+                    { name: 'Available Tools', value: `
+• send_message - Send messages to channels
+• get_balance - Check user balance
+• add_coins / remove_coins - Modify coins
+• play_slots / play_keno - Casino games
+• broadcast - Send to all servers
+• mute_user - Timeout users
+• get_social_credit / check_credit_score - Credit info
+• get_bank_balance / get_debt_status - Bank info
+• get_copyrights - Server copyrights
+• search_passive_context - Search context`, inline: false }
+                )
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [embed] });
         }
     },
     {
         data: new SlashCommandBuilder()
             .setName('ai-manage')
-            .setDescription('Manage AI settings')
+            .setDescription('Full AI settings management')
             .addStringOption(opt =>
                 opt.setName('action')
-                    .setDescription('Action to take')
+                    .setDescription('Action to perform')
                     .setRequired(true)
                     .addChoices(
-                        { name: 'Enable', value: 'enable' },
-                        { name: 'Disable', value: 'disable' },
-                        { name: 'Clear Memory', value: 'clear' },
-                        { name: 'Reset All', value: 'reset' },
-                        { name: 'Status', value: 'status' }
+                        { name: 'Enable AI', value: 'enable' },
+                        { name: 'Disable AI', value: 'disable' },
+                        { name: 'Clear Memory', value: 'clear_memory' },
+                        { name: 'Reset All Settings', value: 'reset' }
                     )
             ),
         async execute(interaction: any, api: any) {
             const action = interaction.options.getString('action');
-            const mem = channelMemory.get(interaction.channelId) || [];
             
             switch (action) {
                 case 'enable':
-                    aiConfig.enabled = true;
+                    config.enabled = true;
                     saveConfig();
-                    
-                    const enableEmbed = new EmbedBuilder()
-                        .setTitle('✅ AI Globally Enabled')
-                        .setColor('#22c55e')
-                        .setDescription('AI has been enabled globally. All configured channels are now active.')
-                        .addFields(
-                            { name: 'Active Channels', value: `${aiConfig.enabledChannels.length}`, inline: true },
-                            { name: 'Agentic Mode', value: aiConfig.agenticMode.enabled ? '🟢 On' : '🔴 Off', inline: true }
-                        )
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [enableEmbed], ephemeral: true });
+                    await interaction.reply({ content: '✅ AI enabled', ephemeral: true });
                     break;
-                    
                 case 'disable':
-                    aiConfig.enabled = false;
+                    config.enabled = false;
                     saveConfig();
-                    
-                    const disableEmbed = new EmbedBuilder()
-                        .setTitle('🚫 AI Globally Disabled')
-                        .setColor('#ef4444')
-                        .setDescription('AI has been disabled globally. Use `/ai-manage enable` to reactivate.')
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [disableEmbed], ephemeral: true });
+                    await interaction.reply({ content: '✅ AI disabled', ephemeral: true });
                     break;
-                    
-                case 'clear':
-                    channelMemory.clear();
-                    
-                    const clearEmbed = new EmbedBuilder()
-                        .setTitle('🧹 Memory Cleared')
-                        .setColor('#f59e0b')
-                        .setDescription('All conversation memory has been cleared for this channel.')
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [clearEmbed], ephemeral: true });
+                case 'clear_memory':
+                    userProfiles = {};
+                    saveUserProfiles();
+                    await interaction.reply({ content: '✅ All user memory cleared', ephemeral: true });
                     break;
-                    
                 case 'reset':
-                    channelMemory.clear();
-                    codeRAG = [];
-                    await loadCodeRAG();
-                    
-                    const resetEmbed = new EmbedBuilder()
-                        .setTitle('🔄 Full Reset Complete')
-                        .setColor('#8b5cf6')
-                        .setDescription('AI has been fully reset!')
-                        .addFields(
-                            { name: 'Memory', value: '✅ Cleared', inline: true },
-                            { name: 'RAG Cache', value: `✅ Reloaded (${codeRAG.length} entries)`, inline: true }
-                        )
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [resetEmbed], ephemeral: true });
-                    break;
-                    
-                case 'status':
-                    const statusEmbed = new EmbedBuilder()
-                        .setTitle('📊 AI Status Dashboard')
-                        .setColor('#6366f1')
-                        .setDescription('Current AI system status:')
-                        .addFields(
-                            { name: '🌐 Global Status', value: aiConfig.enabled ? '🟢 **ENABLED**' : '🔴 **DISABLED**', inline: false },
-                            { name: '📺 Active Channels', value: `${aiConfig.enabledChannels.length} channels`, inline: true },
-                            { name: '🧠 Channel Memory', value: `${mem.length} messages`, inline: true },
-                            { name: '🌀 Agentic Mode', value: aiConfig.agenticMode.enabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
-                            { name: '🤖 Chat Model', value: `\`${aiConfig.model}\``, inline: true },
-                            { name: '📐 Embeddings', value: `\`${aiConfig.embeddingModel}\``, inline: true },
-                            { name: '📅 Scheduled', value: `${aiConfig.scheduledMessages.length} messages`, inline: true },
-                            { name: '📚 RAG Entries', value: `${codeRAG.length} files`, inline: true },
-                            { name: '⚡ Similarity', value: `${aiConfig.similarityThreshold}`, inline: true },
-                            { name: '💬 Max Context', value: `${aiConfig.maxContextMessages} messages`, inline: true }
-                        )
-                        .setFooter({ text: 'Loopconomy AI System' })
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [statusEmbed], ephemeral: true });
+                    config = loadConfig();
+                    saveConfig();
+                    await interaction.reply({ content: '✅ AI settings reset to defaults', ephemeral: true });
                     break;
             }
         }
@@ -1009,273 +1050,131 @@ export const commands = [
     {
         data: new SlashCommandBuilder()
             .setName('ai-agentic')
-            .setDescription('Toggle agentic mode'),
+            .setDescription('Toggle agentic mode on/off')
+            .addBooleanOption(opt =>
+                opt.setName('enabled')
+                    .setDescription('Enable or disable agentic mode')
+                    .setRequired(true)
+            ),
         async execute(interaction: any, api: any) {
-            aiConfig.agenticMode.enabled = !aiConfig.agenticMode.enabled;
+            const enabled = interaction.options.getBoolean('enabled');
+            config.agenticMode.enabled = enabled;
             saveConfig();
-            
-            const agenticEmbed = new EmbedBuilder()
-                .setTitle(aiConfig.agenticMode.enabled ? '🌀 Agentic Mode Enabled' : '🌀 Agentic Mode Disabled')
-                .setColor(aiConfig.agenticMode.enabled ? '#22c55e' : '#ef4444')
-                .setDescription(aiConfig.agenticMode.enabled 
-                    ? 'Agentic mode is now **enabled**. The AI will autonomously decide when to respond to messages in enabled channels!'
-                    : 'Agentic mode has been **disabled**. The AI will now only respond when directly mentioned or replied to.'
-                )
-                .addFields(
-                    { name: 'Max Context', value: `${aiConfig.agenticMode.maxContext} messages`, inline: true },
-                    { name: 'Reasoning', value: aiConfig.agenticMode.reasoningEnabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
-                    { name: 'Timing Checks', value: aiConfig.agenticMode.timingEnabled ? '🟢 Enabled' : '🔴 Disabled', inline: true }
-                )
-                .setFooter({ text: 'Use --agentic in a message to temporarily enable for one response' })
-                .setTimestamp();
-            
-            await interaction.reply({ embeds: [agenticEmbed], ephemeral: true });
+            await interaction.reply({ content: `Agentic mode ${enabled ? 'enabled' : 'disabled'}`, ephemeral: true });
         }
     },
     {
         data: new SlashCommandBuilder()
             .setName('ai-schedule')
-            .setDescription('Manage scheduled AI messages')
+            .setDescription('Schedule an AI message')
             .addStringOption(opt =>
-                opt.setName('action')
-                    .setDescription('Action')
+                opt.setName('time')
+                    .setDescription('Time delay (e.g., 30m, 1h, 5m)')
                     .setRequired(true)
-                    .addChoices(
-                        { name: 'List', value: 'list' },
-                        { name: 'Add', value: 'add' },
-                        { name: 'Remove', value: 'remove' }
-                    )
             )
             .addStringOption(opt =>
-                opt.setName('channel_id')
-                    .setDescription('Channel ID for messages')
-                    .setRequired(false)
-            )
-            .addStringOption(opt =>
-                opt.setName('cron')
-                    .setDescription('Cron time (HH:MM)')
-                    .setRequired(false)
-            )
-            .addStringOption(opt =>
-                opt.setName('prompt')
-                    .setDescription('Message prompt')
-                    .setRequired(false)
+                opt.setName('message')
+                    .setDescription('Message content')
+                    .setRequired(true)
             ),
         async execute(interaction: any, api: any) {
-            const action = interaction.options.getString('action');
+            const timeStr = interaction.options.getString('time');
+            const messageContent = interaction.options.getString('message');
+            const delay = parseScheduleTime(timeStr);
             
-            switch (action) {
-                case 'list':
-                    if (aiConfig.scheduledMessages.length === 0) {
-                        const emptyEmbed = new EmbedBuilder()
-                            .setTitle('📅 Scheduled Messages')
-                            .setColor('#6b7280')
-                            .setDescription('No scheduled messages yet!')
-                            .setFooter({ text: 'Use /ai-schedule add to create one' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [emptyEmbed], ephemeral: true });
-                        return;
-                    }
-                    
-                    const scheduleFields = aiConfig.scheduledMessages.map((s, i) => ({
-                        name: `${i + 1}. ${s.cron}`,
-                        value: `Channel: <#${s.channelId}>\nPrompt: ${s.prompt.substring(0, 50)}...\nStatus: ${s.enabled ? '🟢 Active' : '🔴 Paused'}`,
-                        inline: false
-                    }));
-                    
-                    const listEmbed = new EmbedBuilder()
-                        .setTitle('📅 Scheduled Messages')
-                        .setColor('#6366f1')
-                        .setDescription(`You have **${aiConfig.scheduledMessages.length}** scheduled message(s)`)
-                        .addFields(...scheduleFields)
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [listEmbed], ephemeral: true });
-                    break;
-                    
-                case 'add':
-                    const channelId = interaction.options.getString('channel_id') || interaction.channelId;
-                    const cron = interaction.options.getString('cron');
-                    const prompt = interaction.options.getString('prompt');
-                    
-                    if (!cron || !prompt) {
-                        const usageEmbed = new EmbedBuilder()
-                            .setTitle('❌ Missing Parameters')
-                            .setColor('#ef4444')
-                            .setDescription('Please provide both **cron time** and **prompt**:')
-                            .addFields(
-                                { name: 'Format', value: '/ai-schedule add <channel_id> <HH:MM> <prompt>', inline: false },
-                                { name: 'Example', value: '/ai-schedule add #general 08:00 Good morning everyone!', inline: false }
-                            )
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [usageEmbed], ephemeral: true });
-                        return;
-                    }
-                    
-                    const scheduleId = Date.now().toString();
-                    aiConfig.scheduledMessages.push({
-                        id: scheduleId,
-                        channelId,
-                        cron,
-                        prompt,
-                        enabled: true
-                    });
-                    saveConfig();
-                    
-                    const addEmbed = new EmbedBuilder()
-                        .setTitle('✅ Scheduled Message Added')
-                        .setColor('#22c55e')
-                        .setDescription('Your scheduled message has been created!')
-                        .addFields(
-                            { name: '⏰ Time', value: `\`${cron}\``, inline: true },
-                            { name: '📺 Channel', value: `<#${channelId}>`, inline: true },
-                            { name: '💬 Prompt', value: prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''), inline: false }
-                        )
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [addEmbed], ephemeral: true });
-                    break;
-                    
-                case 'remove':
-                    const removeId = interaction.options.getString('id') || interaction.options.getString('channel_id');
-                    const idx = aiConfig.scheduledMessages.findIndex(s => s.id === removeId);
-                    
-                    if (idx >= 0) {
-                        const removed = aiConfig.scheduledMessages.splice(idx, 1)[0];
-                        saveConfig();
-                        
-                        const removeEmbed = new EmbedBuilder()
-                            .setTitle('🗑️ Schedule Removed')
-                            .setColor('#ef4444')
-                            .setDescription('The scheduled message has been removed.')
-                            .addFields(
-                                { name: 'Removed Time', value: `\`${removed.cron}\``, inline: true },
-                                { name: 'Channel', value: `<#${removed.channelId}>`, inline: true }
-                            )
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [removeEmbed], ephemeral: true });
-                    } else {
-                        const notFoundEmbed = new EmbedBuilder()
-                            .setTitle('❌ Schedule Not Found')
-                            .setColor('#ef4444')
-                            .setDescription('Could not find the scheduled message. Use `/ai-schedule list` to see all schedules.')
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [notFoundEmbed], ephemeral: true });
-                    }
-                    break;
+            if (delay === 0) {
+                return interaction.reply({ content: 'Invalid time format. Use format like: 30m, 1h, 5m, 60s', ephemeral: true });
             }
+            
+            const schedule: any = {
+                id: Date.now().toString(),
+                guildId: interaction.guildId,
+                channelId: interaction.channelId,
+                message: messageContent,
+                executeAt: Date.now() + delay
+            };
+            
+            config.scheduledMessages.push(schedule);
+            saveConfig();
+            
+            const executeDate = new Date(schedule.executeAt);
+            await interaction.reply({ content: `✅ Message scheduled for ${executeDate.toLocaleTimeString()}`, ephemeral: true });
+            
+            setTimeout(async () => {
+                try {
+                    const channel = api.client?.guilds.cache.get(schedule.guildId)?.channels.cache.get(schedule.channelId);
+                    if (channel) {
+                        await channel.send(messageContent);
+                    }
+                    config.scheduledMessages = config.scheduledMessages.filter((s: any) => s.id !== schedule.id);
+                    saveConfig();
+                } catch (e) {
+                    console.error('[AI] Scheduled message failed:', e);
+                }
+            }, delay);
         }
     },
     {
         data: new SlashCommandBuilder()
             .setName('ai-rag')
-            .setDescription('Manage AI knowledge base')
+            .setDescription('Manage RAG knowledge base')
             .addStringOption(opt =>
                 opt.setName('action')
-                    .setDescription('Action')
+                    .setDescription('Action to perform')
                     .setRequired(true)
                     .addChoices(
-                        { name: 'List', value: 'list' },
-                        { name: 'Add', value: 'add' },
-                        { name: 'Remove', value: 'remove' }
+                        { name: 'List Files', value: 'list' },
+                        { name: 'Add File', value: 'add' },
+                        { name: 'Remove File', value: 'remove' }
                     )
             )
             .addStringOption(opt =>
-                opt.setName('path')
-                    .setDescription('File path')
+                opt.setName('filename')
+                    .setDescription('Filename (for add/remove)')
                     .setRequired(false)
             ),
         async execute(interaction: any, api: any) {
             const action = interaction.options.getString('action');
-            const filePath = interaction.options.getString('path');
+            const filename = interaction.options.getString('filename');
             
             switch (action) {
                 case 'list':
-                    const ragListEmbed = new EmbedBuilder()
-                        .setTitle('📚 RAG Knowledge Base')
-                        .setColor('#6366f1')
-                        .setDescription(`Your knowledge base contains **${codeRAG.length}** indexed files.`)
+                    if (ragFiles.length === 0) {
+                        return interaction.reply({ content: 'No files in RAG knowledge base', ephemeral: true });
+                    }
+                    const listEmbed = new EmbedBuilder()
+                        .setTitle('📚 RAG Knowledge Base Files')
+                        .setColor('#0099ff')
                         .addFields(
-                            { name: 'Files Indexed', value: codeRAG.length > 0 ? codeRAG.map(r => `• \`${r.file_path}\``).join('\n') : 'No files indexed', inline: false }
-                        )
-                        .setFooter({ text: 'Use /ai-rag add <path> to add files' })
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [ragListEmbed], ephemeral: true });
+                            { name: 'Files', value: ragFiles.map(f => `• ${f.filename} (added ${new Date(f.addedAt).toLocaleDateString()})`).join('\n') || 'No files' }
+                        );
+                    await interaction.reply({ embeds: [listEmbed] });
                     break;
-                    
                 case 'add':
-                    if (!filePath) {
-                        const usageEmbed = new EmbedBuilder()
-                            .setTitle('❌ Missing File Path')
-                            .setColor('#ef4444')
-                            .setDescription('Please provide a file path to add to the knowledge base.')
-                            .addFields(
-                                { name: 'Usage', value: '/ai-rag add <file_path>', inline: false },
-                                { name: 'Example', value: '/ai-rag add commands/help.js', inline: false }
-                            )
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [usageEmbed], ephemeral: true });
-                        return;
+                    if (!filename) {
+                        return interaction.reply({ content: 'Please provide a filename', ephemeral: true });
                     }
-                    
-                    await interaction.deferReply();
-                    codeRAG = [];
-                    await loadCodeRAG();
-                    
-                    const addEmbed = new EmbedBuilder()
-                        .setTitle('✅ File Added to Knowledge Base')
-                        .setColor('#22c55e')
-                        .setDescription(`**${filePath}** has been indexed and added to the RAG system!`)
-                        .addFields(
-                            { name: 'Total Files', value: `${codeRAG.length}`, inline: true },
-                            { name: 'Status', value: '🟢 Ready', inline: true }
-                        )
-                        .setTimestamp();
-                    
-                    await interaction.editReply({ embeds: [addEmbed] });
+                    const newFile: RAGFile = {
+                        id: Date.now().toString(),
+                        filename: filename,
+                        path: path.join(process.cwd(), 'rag', filename),
+                        addedAt: Date.now()
+                    };
+                    ragFiles.push(newFile);
+                    saveRAGFiles();
+                    await interaction.reply({ content: `✅ Added ${filename} to RAG knowledge base`, ephemeral: true });
                     break;
-                    
                 case 'remove':
-                    if (!filePath) {
-                        const usageEmbed = new EmbedBuilder()
-                            .setTitle('❌ Missing File Path')
-                            .setColor('#ef4444')
-                            .setDescription('Please provide a file path to remove from the knowledge base.')
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [usageEmbed], ephemeral: true });
-                        return;
+                    if (!filename) {
+                        return interaction.reply({ content: 'Please provide a filename to remove', ephemeral: true });
                     }
-                    
-                    const idx = codeRAG.findIndex(r => r.file_path === filePath);
-                    
-                    if (idx >= 0) {
-                        codeRAG.splice(idx, 1);
-                        
-                        const removeEmbed = new EmbedBuilder()
-                            .setTitle('✅ File Removed')
-                            .setColor('#f59e0b')
-                            .setDescription(`**${filePath}** has been removed from the knowledge base.`)
-                            .addFields(
-                                { name: 'Remaining Files', value: `${codeRAG.length}`, inline: true }
-                            )
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [removeEmbed], ephemeral: true });
+                    const initialLength = ragFiles.length;
+                    ragFiles = ragFiles.filter(f => f.filename !== filename);
+                    if (ragFiles.length < initialLength) {
+                        saveRAGFiles();
+                        await interaction.reply({ content: `✅ Removed ${filename} from RAG knowledge base`, ephemeral: true });
                     } else {
-                        const notFoundEmbed = new EmbedBuilder()
-                            .setTitle('❌ File Not Found')
-                            .setColor('#ef4444')
-                            .setDescription(`**${filePath}** was not found in the knowledge base.`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [notFoundEmbed], ephemeral: true });
+                        await interaction.reply({ content: `File ${filename} not found in RAG knowledge base`, ephemeral: true });
                     }
                     break;
             }
@@ -1284,645 +1183,49 @@ export const commands = [
     {
         data: new SlashCommandBuilder()
             .setName('ai-logs')
-            .setDescription('View AI conversation/game history')
-            .addStringOption(opt =>
-                opt.setName('type')
-                    .setDescription('Log type')
-                    .setRequired(true)
-                    .addChoices(
-                        { name: 'Conversations', value: 'conversations' },
-                        { name: 'Game History', value: 'games' }
-                    )
-            )
+            .setDescription('View AI conversation logs')
             .addIntegerOption(opt =>
-                opt.setName('limit')
-                    .setDescription('Number of entries')
+                opt.setName('count')
+                    .setDescription('Number of logs to show')
                     .setRequired(false)
+                    .setMinValue(1)
+                    .setMaxValue(50)
             ),
         async execute(interaction: any, api: any) {
-            const type = interaction.options.getString('type');
-            const limit = interaction.options.getInteger('limit') || 20;
+            const count = interaction.options.getInteger('count') || 10;
+            const guildLogs = aiLogs.filter(l => l.guildId === interaction.guildId).slice(-count);
             
-            await interaction.deferReply();
-            
-            try {
-                const guildId = interaction.guildId;
-                const response = await fetch('http://localhost:8080/api/shell/get-logs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type,
-                        server_id: guildId,
-                        channel_id: interaction.channelId,
-                        limit
-                    })
-                });
-                const data = await response.json() as any;
-                
-                if (!data.logs?.length) {
-                    const emptyEmbed = new EmbedBuilder()
-                        .setTitle(type === 'conversations' ? '💬 Conversations' : '🎮 Game History')
-                        .setColor('#6b7280')
-                        .setDescription('No logs found for this category.')
-                        .setTimestamp();
-                    
-                    await interaction.editReply({ embeds: [emptyEmbed] });
-                    return;
-                }
-                
-                if (type === 'conversations') {
-                    const logFields = data.logs.slice(0, 10).map((l: any, i: number) => ({
-                        name: `${i + 1}. ${l.user_tag || 'Unknown'} (${l.role})`,
-                        value: l.content?.substring(0, 150) + (l.content?.length > 150 ? '...' : '') || 'Empty',
-                        inline: false
-                    }));
-                    
-                    const convEmbed = new EmbedBuilder()
-                        .setTitle('💬 Recent AI Conversations')
-                        .setColor('#6366f1')
-                        .setDescription(`Showing ${Math.min(10, data.logs.length)} of ${data.logs.length} conversations`)
-                        .addFields(...logFields)
-                        .setFooter({ text: `Requested by ${interaction.user.tag}` })
-                        .setTimestamp();
-                    
-                    await interaction.editReply({ embeds: [convEmbed] });
-                } else {
-                    const gameFields = data.logs.slice(0, 10).map((l: any, i: number) => ({
-                        name: `${i + 1}. ${l.game_type?.toUpperCase() || 'Game'}`,
-                        value: `**${l.outcome || 'Unknown'}** | Bet: ${l.bet_amount || 0} → Payout: ${l.payout || 0} coins`,
-                        inline: false
-                    }));
-                    
-                    const gameEmbed = new EmbedBuilder()
-                        .setTitle('🎮 Recent Game History')
-                        .setColor('#f59e0b')
-                        .setDescription(`Showing ${Math.min(10, data.logs.length)} of ${data.logs.length} games`)
-                        .addFields(...gameFields)
-                        .setFooter({ text: `Requested by ${interaction.user.tag}` })
-                        .setTimestamp();
-                    
-                    await interaction.editReply({ embeds: [gameEmbed] });
-                }
-            } catch (e: any) {
-                const errorEmbed = new EmbedBuilder()
-                    .setTitle('❌ Error')
-                    .setColor('#ef4444')
-                    .setDescription('Failed to retrieve logs: ' + e.message)
-                    .setTimestamp();
-                
-                await interaction.editReply({ embeds: [errorEmbed] });
+            if (guildLogs.length === 0) {
+                return interaction.reply({ content: 'No conversation logs found for this server', ephemeral: true });
             }
-        }
-    },
-    {
-        data: new SlashCommandBuilder()
-            .setName('ai-config')
-            .setDescription('Advanced AI configuration panel')
-            .addStringOption(opt =>
-                opt.setName('setting')
-                    .setDescription('Setting to configure')
-                    .setRequired(true)
-                    .addChoices(
-                        { name: 'Similarity Threshold', value: 'threshold' },
-                        { name: 'Max Context Messages', value: 'maxcontext' },
-                        { name: 'Embedding Model', value: 'embedding' },
-                        { name: 'Ollama URL', value: 'ollama' },
-                        { name: 'Temperature', value: 'temperature' },
-                        { name: 'Top P', value: 'top-p' },
-                        { name: 'Top K', value: 'top-k' },
-                        { name: 'Min P', value: 'min-p' },
-                        { name: 'Repeat Penalty', value: 'repeat-penalty' },
-                        { name: 'Max Tokens', value: 'num-predict' },
-                        { name: 'Full Status', value: 'status' }
-                    )
-            )
-            .addStringOption(opt =>
-                opt.setName('value')
-                    .setDescription('New value (leave empty to view current)')
-                    .setRequired(false)
-            ),
-        async execute(interaction: any, api: any) {
-            const setting = interaction.options.getString('setting');
-            const value = interaction.options.getString('value');
             
-            switch (setting) {
-                case 'threshold':
-                    if (value) {
-                        const threshold = parseFloat(value);
-                        if (isNaN(threshold) || threshold < 0 || threshold > 1) {
-                            return interaction.reply({ content: 'Threshold must be between 0 and 1 (e.g., 0.75)', ephemeral: true });
-                        }
-                        aiConfig.similarityThreshold = threshold;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Threshold Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Similarity threshold set to **${threshold}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('⚡ Similarity Threshold')
-                            .setColor('#6366f1')
-                            .setDescription('Current threshold for RAG similarity matching')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.similarityThreshold}`, inline: true })
-                            .addFields({ name: 'Range', value: '0.0 - 1.0', inline: true })
-                            .setFooter({ text: 'Use /ai-config threshold <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'maxcontext':
-                    if (value) {
-                        const maxContext = parseInt(value);
-                        if (isNaN(maxContext) || maxContext < 1 || maxContext > 200) {
-                            return interaction.reply({ content: 'Max context must be between 1 and 200 messages', ephemeral: true });
-                        }
-                        aiConfig.maxContextMessages = maxContext;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Max Context Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Max context messages set to **${maxContext}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('💬 Max Context Messages')
-                            .setColor('#6366f1')
-                            .setDescription('Number of messages to keep in conversation context')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.maxContextMessages} messages`, inline: true })
-                            .addFields({ name: 'Range', value: '1 - 200', inline: true })
-                            .setFooter({ text: 'Use /ai-config maxcontext <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'embedding':
-                    if (value) {
-                        aiConfig.embeddingModel = value;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Embedding Model Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Embedding model set to **${value}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('📐 Embedding Model')
-                            .setColor('#6366f1')
-                            .setDescription('Model used for generating text embeddings')
-                            .addFields({ name: 'Current Model', value: `\`${aiConfig.embeddingModel}\``, inline: false })
-                            .setFooter({ text: 'Use /ai-config embedding <model> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'ollama':
-                    if (value) {
-                        aiConfig.ollamaUrl = value;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Ollama URL Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Ollama URL set to **${value}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🔗 Ollama URL')
-                            .setColor('#6366f1')
-                            .setDescription('Endpoint for Ollama API')
-                            .addFields({ name: 'Current URL', value: `\`${aiConfig.ollamaUrl}\``, inline: false })
-                            .setFooter({ text: 'Use /ai-config ollama <url> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'temperature':
-                    if (value) {
-                        const temp = parseFloat(value);
-                        if (isNaN(temp) || temp < 0 || temp > 2) {
-                            return interaction.reply({ content: 'Temperature must be between 0 and 2 (e.g., 0.7)', ephemeral: true });
-                        }
-                        aiConfig.temperature = temp;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Temperature Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Temperature set to **${temp}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🌡️ Temperature')
-                            .setColor('#6366f1')
-                            .setDescription('Controls randomness in generation')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.temperature}`, inline: true })
-                            .addFields({ name: 'Range', value: '0.0 - 2.0', inline: true })
-                            .setFooter({ text: 'Use /ai-config temperature <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'top-p':
-                    if (value) {
-                        const topP = parseFloat(value);
-                        if (isNaN(topP) || topP < 0 || topP > 1) {
-                            return interaction.reply({ content: 'Top P must be between 0 and 1 (e.g., 0.9)', ephemeral: true });
-                        }
-                        aiConfig.top_p = topP;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Top P Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Top P set to **${topP}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('📊 Top P (Nucleus Sampling)')
-                            .setColor('#6366f1')
-                            .setDescription('Controls diversity via nucleus sampling')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.top_p}`, inline: true })
-                            .addFields({ name: 'Range', value: '0.0 - 1.0', inline: true })
-                            .setFooter({ text: 'Use /ai-config top-p <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'top-k':
-                    if (value) {
-                        const topK = parseInt(value);
-                        if (isNaN(topK) || topK < 1 || topK > 200) {
-                            return interaction.reply({ content: 'Top K must be between 1 and 200 (e.g., 40)', ephemeral: true });
-                        }
-                        aiConfig.top_k = topK;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Top K Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Top K set to **${topK}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🔢 Top K')
-                            .setColor('#6366f1')
-                            .setDescription('Limits vocabulary to top K tokens')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.top_k}`, inline: true })
-                            .addFields({ name: 'Range', value: '1 - 200', inline: true })
-                            .setFooter({ text: 'Use /ai-config top-k <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'min-p':
-                    if (value) {
-                        const minP = parseFloat(value);
-                        if (isNaN(minP) || minP < 0 || minP > 1) {
-                            return interaction.reply({ content: 'Min P must be between 0 and 1 (e.g., 0.05)', ephemeral: true });
-                        }
-                        aiConfig.min_p = minP;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Min P Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Min P set to **${minP}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('📉 Min P')
-                            .setColor('#6366f1')
-                            .setDescription('Minimum probability threshold')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.min_p}`, inline: true })
-                            .addFields({ name: 'Range', value: '0.0 - 1.0', inline: true })
-                            .setFooter({ text: 'Use /ai-config min-p <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'repeat-penalty':
-                    if (value) {
-                        const repeatPenalty = parseFloat(value);
-                        if (isNaN(repeatPenalty) || repeatPenalty < 0 || repeatPenalty > 2) {
-                            return interaction.reply({ content: 'Repeat Penalty must be between 0 and 2 (e.g., 1.1)', ephemeral: true });
-                        }
-                        aiConfig.repeat_penalty = repeatPenalty;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Repeat Penalty Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Repeat Penalty set to **${repeatPenalty}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🔄 Repeat Penalty')
-                            .setColor('#6366f1')
-                            .setDescription('Penalizes repeated tokens')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.repeat_penalty}`, inline: true })
-                            .addFields({ name: 'Range', value: '0.0 - 2.0', inline: true })
-                            .setFooter({ text: 'Use /ai-config repeat-penalty <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'num-predict':
-                    if (value) {
-                        const numPredict = parseInt(value);
-                        if (isNaN(numPredict) || numPredict < 64 || numPredict > 4096) {
-                            return interaction.reply({ content: 'Max Tokens must be between 64 and 4096 (e.g., 256)', ephemeral: true });
-                        }
-                        aiConfig.num_predict = numPredict;
-                        saveConfig();
-                        
-                        const setEmbed = new EmbedBuilder()
-                            .setTitle('✅ Max Tokens Updated')
-                            .setColor('#22c55e')
-                            .setDescription(`Max Tokens set to **${numPredict}**`)
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [setEmbed], ephemeral: true });
-                    } else {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🎚️ Max Tokens')
-                            .setColor('#6366f1')
-                            .setDescription('Maximum number of tokens to generate')
-                            .addFields({ name: 'Current Value', value: `${aiConfig.num_predict}`, inline: true })
-                            .addFields({ name: 'Range', value: '64 - 4096', inline: true })
-                            .setFooter({ text: 'Use /ai-config num-predict <value> to change' })
-                            .setTimestamp();
-                        
-                        await interaction.reply({ embeds: [embed], ephemeral: true });
-                    }
-                    break;
-                    
-                case 'status':
-                    const fullStatusEmbed = new EmbedBuilder()
-                        .setTitle('🎛️ AI Configuration Status')
-                        .setColor('#6366f1')
-                        .setDescription('Complete AI system configuration:')
-                        .addFields(
-                            { name: '🤖 Chat Model', value: `\`${aiConfig.model}\``, inline: true },
-                            { name: '📐 Embedding Model', value: `\`${aiConfig.embeddingModel}\``, inline: true },
-                            { name: '🔗 Ollama URL', value: `\`${aiConfig.ollamaUrl}\``, inline: false },
-                            { name: '⚡ Similarity', value: `${aiConfig.similarityThreshold}`, inline: true },
-                            { name: '💬 Max Context', value: `${aiConfig.maxContextMessages}`, inline: true },
-                            { name: '🌡️ Temperature', value: `${aiConfig.temperature}`, inline: true },
-                            { name: '📊 Top P', value: `${aiConfig.top_p}`, inline: true },
-                            { name: '🔢 Top K', value: `${aiConfig.top_k}`, inline: true },
-                            { name: '📉 Min P', value: `${aiConfig.min_p}`, inline: true },
-                            { name: '🔄 Repeat Penalty', value: `${aiConfig.repeat_penalty}`, inline: true },
-                            { name: '🎚️ Max Tokens', value: `${aiConfig.num_predict}`, inline: true },
-                            { name: '🌐 Global', value: aiConfig.enabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
-                            { name: '🌀 Agentic', value: aiConfig.agenticMode.enabled ? '🟢 Enabled' : '🔴 Disabled', inline: true },
-                            { name: '📺 Channels', value: `${aiConfig.enabledChannels.length}`, inline: true },
-                            { name: '📅 Scheduled', value: `${aiConfig.scheduledMessages.length}`, inline: true },
-                            { name: '📚 RAG Files', value: `${codeRAG.length}`, inline: true }
-                        )
-                        .setTimestamp();
-                    
-                    await interaction.reply({ embeds: [fullStatusEmbed], ephemeral: true });
-                    break;
-            }
+            const logsContent = guildLogs.map(l => 
+                `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.username}: ${l.message.substring(0, 50)}${l.message.length > 50 ? '...' : ''} → ${l.response.substring(0, 50)}${l.response.length > 50 ? '...' : ''}`
+            ).join('\n');
+            
+            const embed = new EmbedBuilder()
+                .setTitle('📜 AI Conversation Logs')
+                .setColor('#0099ff')
+                .addFields(
+                    { name: 'Recent Conversations', value: logsContent || 'No logs available' }
+                )
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [embed] });
         }
     }
 ];
 
-export const onMessage = async (message: any, api: any) => {
-    if (message.author.bot) return;
-    if (!aiConfig.enabled) return;
-    
-    const botId = api.client?.user?.id;
-    if (!botId) return;
-    
-    const rawContent = message.content;
-    
-    let isMentioned = false;
-    try {
-        isMentioned = message.mentions?.has?.(botId) || rawContent.includes(`<@${botId}>`);
-    } catch (e) {}
-    
-    let isReplyToBot = false;
-    if (message.reference?.messageId) {
-        try {
-            const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
-            isReplyToBot = repliedMsg?.author?.id === botId;
-        } catch (e) {}
-    }
-    
-    const isAgenticFlag = /--agentic/gi.test(rawContent);
-    if (isAgenticFlag) {
-        aiConfig.agenticMode.enabled = true;
-    }
-    
-    const isAgenticChannel = aiConfig.agenticMode.enabled;
-    const channelId = message.channelId;
-    
-    if (!isChannelEnabled(channelId)) {
-        if (isMentioned) {
-            return message.reply('AI is not enabled in this channel. Use `/ai-manage enable` first.').catch(() => {});
-        }
-        return;
-    }
-    
-    const content = rawContent.replace(/<@!?\d+>/g, '').replace(/--agentic/gi, '').trim();
-    if (!content) return;
-    
-    const state = getChannelState(channelId);
-    state.lastInteractionMs = Date.now();
-    
-    const isDirectedAtBot = isMentioned || isReplyToBot;
-    if (!isDirectedAtBot && !isAgenticChannel) return;
-    
-    try {
-        let conversationHistory: { role: string; content: string }[] = [];
-        let recentContext = '';
-        
-        try {
-            const historyMsgs = await message.channel.messages.fetch({ limit: 100 });
-            conversationHistory = historyMsgs
-                .filter((m: any) => m.author.id !== botId && !m.author.bot)
-                .map((m: any) => ({ role: m.author.id === apiInstance.client.user.id ? 'assistant' : 'user', content: m.content }))
-                .reverse();
-            recentContext = historyMsgs.filter((m: any) => m.author.id !== botId).last(10).map((m: any) => m.content).join('\n');
-        } catch (e) {}
-        
-        let replyContext = '';
-        if (message.reference?.messageId) {
-            try {
-                const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
-                replyContext = `${repliedMsg.author.username}: ${repliedMsg.content}\n`;
-            } catch (e) {}
-        }
-        
-        const codeContext = await searchCodeRAG(content);
-        const memoryContext = await findRelevantContext(channelId, content);
-        
-        const baseMessages = [
-            ...memoryContext,
-            ...conversationHistory.slice(0, 100)
-        ];
-        
-        const systemPrompt = isAgenticChannel ? getAgenticSystemPrompt() : getDefaultSystemPrompt();
-        const queryEmbedding = await getEmbedding(content);
-        
-        let finalResponse = '';
-        let thinkingMsg: any = null;
-        
-        if (isAgenticChannel && !isMentioned) {
-            const pass1Messages = [
-                ...baseMessages,
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Current message: ${content}${recentContext ? '\n\nRecent: ' + recentContext : ''}\n\nShould you respond? Be VERY selective. Answer YES or NO only.` }
-            ];
-            
-            const pass1 = await chatWithAI(pass1Messages, systemPrompt, channelId);
-            const hasNO = /\bNO\b/i.test(pass1);
-            const hasYES = /\bYES\b/i.test(pass1);
-            
-            if (hasNO && !hasYES) {
-                return;
-            }
-            
-            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
-            thinkingMsg = await message.reply(thinking).catch(() => null);
-            
-            const passiveContext = await getPassiveRagContext(message.guildId, content);
-            
-            const pass2Messages = [
-                ...baseMessages,
-                ...(passiveContext ? [{ role: 'system', content: `[PASSIVE CONTEXT from past conversations]: ${passiveContext}` }] : []),
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Message: ${content}${recentContext ? '\n\nRecent: ' + recentContext : ''}${replyContext}\n\nWhat brief response (1-2 sentences)? Reply with ONLY your response, no tools.` }
-            ];
-            
-            let pass2 = await chatWithAI(pass2Messages, systemPrompt, channelId);
-            finalResponse = cleanResponse(pass2);
-            
-            let toolCalls = parseToolCalls(pass2);
-            let loopCount = 0;
-            const maxLoops = 3;
-            
-            while (toolCalls.length > 0 && loopCount < maxLoops) {
-                loopCount++;
-                const toolResults = await processToolCalls(toolCalls, channelId);
-                pass2Messages.push({ role: 'assistant', content: pass2 });
-                pass2Messages.push({ role: 'system', content: `Results: ${toolResults}` });
-                
-                const pass3 = await chatWithAI(pass2Messages, systemPrompt, channelId);
-                finalResponse = cleanResponse(pass3);
-                toolCalls = parseToolCalls(pass3);
-            }
-            
-        } else {
-            const thinking = UNHINGED_THINKING[Math.floor(Math.random() * UNHINGED_THINKING.length)];
-            thinkingMsg = await message.reply(thinking).catch(() => null);
-            
-            const userMessage = content + (recentContext ? '\n\nRecent: ' + recentContext : '') + (replyContext ? '\n\n' + replyContext : '');
-            const messages = [
-                ...baseMessages,
-                { role: 'system', content: codeContext },
-                { role: 'user', content: userMessage }
-            ];
-            
-            let response = await chatWithAI(messages, systemPrompt, channelId);
-            finalResponse = cleanResponse(response);
-            
-            let toolCalls = parseToolCalls(response);
-            let loopCount = 0;
-            const maxLoops = 2;
-            
-            while (toolCalls.length > 0 && loopCount < maxLoops) {
-                loopCount++;
-                const toolResults = await processToolCalls(toolCalls, channelId);
-                messages.push({ role: 'assistant', content: response });
-                messages.push({ role: 'system', content: `Results: ${toolResults}` });
-                
-                const newResponse = await chatWithAI(messages, systemPrompt, channelId);
-                finalResponse = cleanResponse(newResponse);
-                toolCalls = parseToolCalls(newResponse);
-            }
-        }
-        
-        addToMemory(channelId, 'user', content);
-        if (finalResponse) {
-            addToMemory(channelId, 'assistant', finalResponse);
-        }
-        
-        if (finalResponse) {
-            if (thinkingMsg) {
-                await thinkingMsg.edit(finalResponse).catch(() => {
-                    thinkingMsg.delete().catch(() => {});
-                    message.reply(finalResponse).catch(() => {});
-                });
-            } else {
-                await message.reply(finalResponse).catch(() => {});
-            }
-        } else if (thinkingMsg) {
-            await thinkingMsg.delete().catch(() => {});
-        }
-        
-        if (isAgenticFlag) {
-            aiConfig.agenticMode.enabled = false;
-        }
-        
-    } catch (e: any) {
-        console.error('[AI] Error:', e);
-        if (!message.replied) {
-            await message.reply('Error: ' + e.message).catch(() => {});
-        }
-    }
-};
-
 export const init = async (api: any) => {
-    apiInstance = api;
     poolRef = api.client?.pool || api.pool;
-    
     loadConfig();
-    await loadCodeRAG();
-    startScheduler();
-    startAutonomousScheduler(api);
+    loadUserProfiles();
+    loadRAGFiles();
+    loadAILogs();
     
-    const mode = aiConfig.agenticMode.enabled ? ' (Agentic)' : '';
-    api.log('AI Module Loaded. Status: ' + (aiConfig.enabled ? 'ENABLED' : 'DISABLED') + ' | Model: ' + aiConfig.model + ' | Scheduled: ' + aiConfig.scheduledMessages.length + mode);
+    api.listen('messageCreate', async (message: any) => {
+        await processAIResponse(message, api);
+    });
+    
+    api.log(`[AI] Loaded - Model: ${config.model}, Reasoning: ${config.reasoningModel || 'disabled'}, Creator: ${config.creatorId || 'not set'}, Channels: ${config.enabledChannels.length}`);
 };

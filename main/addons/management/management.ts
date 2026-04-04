@@ -368,24 +368,29 @@ export const commands = [
     {
         data: new SlashCommandBuilder()
             .setName('reset-economy')
-            .setDescription('Reset all economy data (admin only)'),
+            .setDescription('Reset economy - everyone gets 0, special user gets 50000'),
         async execute(interaction: any, api: any) {
-            const hasTrust = await api.checkTrust?.(interaction.user.id, 5);
-            if (!hasTrust && !isAdmin(interaction.user.id)) {
-                return interaction.reply({ content: '❌ You are not authorized. This command requires trust level 5.', ephemeral: true });
+            console.log('[Reset-Economy] User:', interaction.user.id, 'Admin:', isAdmin(interaction.user.id));
+            
+            const adminCheck = isAdmin(interaction.user.id);
+            if (!adminCheck) {
+                return interaction.reply({ content: '❌ You are not authorized. This command requires admin access.', ephemeral: true });
             }
             
             const pool = api.client?.pool;
             if (!pool) {
+                console.log('[Reset-Economy] No pool available');
                 return interaction.reply({ content: '❌ Database pool not available.', ephemeral: true });
             }
+            
+            const COOKIE_ID = '1337495690435104770';
             
             const confirmEmbed = new EmbedBuilder()
                 .setTitle('⚠️ Confirm Economy Reset')
                 .setColor('#FF0000')
-                .setDescription('This will **DELETE ALL DATA** from the following tables:\n• `economy`\n• `ai_balances`\n• `ai_game_logs`\n\nThis action is **IRREVERSIBLE**!')
+                .setDescription('This will reset the economy:\n• All users set to 0 coins\n• Special user gets 50,000 coins\n\n**Cookie (richest) will receive 50,000 coins**')
                 .addFields(
-                    { name: '⚡ Action', value: 'TRUNCATE tables with RESTART IDENTITY CASCADE', inline: false }
+                    { name: '⚡ Action', value: 'UPDATE economy SET coins = 0, then SET coins = 50000 for special user', inline: false }
                 );
 
             const confirmMsg = await interaction.reply({ 
@@ -394,7 +399,7 @@ export const commands = [
                     {
                         type: 1,
                         components: [
-                            { type: 2, style: 5, label: 'CONFIRM RESET', custom_id: 'confirm_reset' },
+                            { type: 2, style: 3, label: 'CONFIRM RESET', custom_id: 'confirm_reset' },
                             { type: 2, style: 2, label: 'Cancel', custom_id: 'cancel_reset' }
                         ]
                     }
@@ -412,19 +417,29 @@ export const commands = [
                 
                 await btnInteraction.deferReply();
                 
-                await pool.query('TRUNCATE economy, ai_balances, ai_game_logs RESTART IDENTITY CASCADE');
+                console.log('[Reset-Economy] Running UPDATE query...');
+                await pool.query('UPDATE economy SET coins = 0');
+                
+                console.log('[Reset-Economy] Running INSERT for Cookie...');
+                await pool.query(
+                    'INSERT INTO economy (uid, coins) VALUES ($1, $2) ON CONFLICT (uid) DO UPDATE SET coins = $2',
+                    [COOKIE_ID, 50000]
+                );
                 
                 const successEmbed = new EmbedBuilder()
                     .setTitle('✅ Economy Reset Complete')
                     .setColor('#00FF00')
-                    .setDescription('All economy data has been reset.')
+                    .setDescription('Economy has been reset.')
                     .addFields(
-                        { name: '🗑️ Tables Cleared', value: 'economy, ai_balances, ai_game_logs', inline: true }
+                        { name: '💰 All Users', value: 'Set to 0 coins', inline: true },
+                        { name: '🍪 Special User', value: 'Set to 50,000 coins', inline: true },
+                        { name: '📝 Target UID', value: COOKIE_ID, inline: false }
                     )
                     .setTimestamp();
                 
                 await btnInteraction.editReply({ embeds: [successEmbed], components: [] });
             } catch (e: any) {
+                console.error('[Reset-Economy] Error:', e);
                 if (e.message?.includes('time')) {
                     return interaction.editReply({ content: '⏱️ Confirmation timed out.', components: [] }).catch(() => {});
                 }

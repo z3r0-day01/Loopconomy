@@ -1,8 +1,9 @@
-import { SlashCommandBuilder, EmbedBuilder, TextChannel } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, TextChannel, GuildTextBasedChannel } from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const dataPath = path.join(process.cwd(), 'automod.json');
+const configPath = path.join(process.cwd(), 'config.json');
 
 interface AutoModSettings {
     enabled: boolean;
@@ -21,6 +22,7 @@ interface AutoModSettings {
     capsThreshold: number;
     strikeCount: number;
     strikes: { [userId: string]: { count: number; expires: number } };
+    logAllActions: boolean;
 }
 
 interface GuildSettings {
@@ -45,7 +47,8 @@ const defaultSettings: AutoModSettings = {
     logChannel: null,
     capsThreshold: 0.7,
     strikeCount: 0,
-    strikes: {}
+    strikes: {},
+    logAllActions: true
 };
 
 function loadSettings() {
@@ -554,6 +557,44 @@ export const init = async (api: any) => {
                 }
             } catch (e) {
                 api.log(`AutoMod failed: ${e}`);
+            }
+        } else if (settings.logAllActions && settings.logChannel && !settings.whitelist.includes(message.channelId)) {
+            const isSpam = checkSpam(message);
+            const hasLinks = checkLinks(message);
+            const hasCaps = checkCaps(message);
+            const hasMentions = checkMentionSpam(message);
+            const hasEmoji = checkEmojiSpam(message);
+            const hasNewlines = checkNewlines(message);
+            const badWord = checkWordlist(message);
+            
+            if (isSpam || hasLinks || hasCaps || hasMentions || hasEmoji || hasNewlines || badWord) {
+                const action = isSpam ? 'Spam check' :
+                              hasLinks ? 'Link check' :
+                              hasCaps ? 'Caps check' :
+                              hasMentions ? 'Mention check' :
+                              hasEmoji ? 'Emoji check' :
+                              hasNewlines ? 'Newline check' :
+                              badWord ? 'Wordlist check' : 'Check';
+                
+                try {
+                    const logChannel = message.guild.channels.cache.get(settings.logChannel);
+                    if (logChannel) {
+                        const embed = new EmbedBuilder()
+                            .setTitle('🔍 AutoMod Check')
+                            .setColor('#FFAA00')
+                            .addFields(
+                                { name: 'User', value: `<@${message.author.id}>`, inline: true },
+                                { name: 'Channel', value: `<#${message.channelId}>`, inline: true },
+                                { name: 'Check', value: action, inline: true }
+                            )
+                            .addFields({ name: 'Message', value: message.content.substring(0, 100) || '(empty)', inline: false })
+                            .setTimestamp();
+
+                        await (logChannel as TextChannel).send({ embeds: [embed] });
+                    }
+                } catch (e) {
+                    api.log(`AutoMod log failed: ${e}`);
+                }
             }
         }
     });

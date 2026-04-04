@@ -715,7 +715,7 @@ export const init = async (api: any) => {
         if (msg.author.bot) return;
         if (!msg.guild) return;
 
-        const content = msg.content.toLowerCase().trim();
+        const content = msg.content.trim();
         if (content.length < 2) return;
 
         const guildId = msg.guildId;
@@ -726,56 +726,179 @@ export const init = async (api: any) => {
             const pool = poolRef || api.client.pool;
             if (!pool) return;
 
-            const copyrights = await pool.query(
-                'SELECT * FROM copyrights WHERE guild_id = $1 OR guild_id = $2',
-                [guildId, 'GLOBAL']
-            );
+            const isSmartDetectionEnabled = copyrightConfig.smartEnabled || copyrightConfig.embeddingsEnabled;
 
-            for (const copyright of copyrights.rows) {
-                if (content.includes(copyright.term.toLowerCase())) {
-                    if (copyright.owner_id === userId) continue;
+            let violationResult: { violated: boolean; term?: string; isFirstOffense?: boolean; reasoning?: string } | null = null;
 
-                    const fine = copyright.fine_amount;
+            if (isSmartDetectionEnabled) {
+                violationResult = await checkSmartViolation(content, userId, pool);
+            } else {
+                const contentLower = content.toLowerCase();
+                const copyrights = await pool.query(
+                    'SELECT * FROM copyrights WHERE guild_id = $1 OR guild_id = $2',
+                    [guildId, 'GLOBAL']
+                );
 
-                    if (fine > 0) {
-                        const ownerShare = Math.floor(fine * 0.8);
-                        const treasuryShare = Math.floor(fine * 0.2);
+                for (const copyright of copyrights.rows) {
+                    if (contentLower.includes(copyright.term.toLowerCase())) {
+                        if (copyright.owner_id === userId) continue;
 
-                        await pool.query('UPDATE economy SET coins = coins - $1 WHERE uid = $2', [fine, userId]);
-                        await pool.query('UPDATE economy SET coins = coins + $1 WHERE uid = $2', [ownerShare, copyright.owner_id]);
-
-                        await pool.query(
-                            `INSERT INTO server_treasury (guild_id, balance) VALUES ($1, $2)
-                             ON CONFLICT (guild_id) DO UPDATE SET balance = server_treasury.balance + $2`,
-                            [guildId, treasuryShare]
+                        const offenseCheck = await pool.query(
+                            'SELECT COUNT(*) FROM copyright_offenses WHERE uid = $1 AND copyright_id = $2',
+                            [userId, copyright.id]
                         );
+                        const hasPriorOffense = parseInt(offenseCheck.rows[0].count) > 0;
 
-                        await pool.query(
-                            `INSERT INTO copyright_earnings (copyright_id, violator_id, violator_name, fine_collected, owner_share, treasury_share)
-                             VALUES ($1, $2, $3, $4, $5, $6)`,
-                            [copyright.id, userId, userName, fine, ownerShare, treasuryShare]
-                        );
+                        violationResult = { violated: true, term: copyright.term, isFirstOffense: !hasPriorOffense, reasoning: 'Exact match' };
+                        break;
                     }
-
-                    const ownerMention = `<@${copyright.owner_id}>`;
-                    const emojis = ['⚠️', '©', '🚫'];
-                    for (const emoji of emojis) {
-                        try { await msg.react(emoji); } catch (e) {}
-                    }
-
-                    const replyMsg = fine > 0
-                        ? `⚠️ <@${userId}>, "${copyright.term}" is copyrighted by ${ownerMention}! Fine: ${fine} coins (-80% to owner, -20% to treasury)`
-                        : `⚠️ <@${userId}>, "${copyright.term}" is copyrighted by ${ownerMention}!`;
-
-                    try { await msg.reply(replyMsg); } catch (e) {}
-
-                    api.log(`[COPYRIGHT] ${userName} violated "${copyright.term}" - Fine: ${fine}`);
-                    break;
                 }
+            }
+
+            if (violationResult?.violated && violationResult.term) {
+                const copyrights = await pool.query(
+                    'SELECT * FROM copyrights WHERE guild_id = $1 AND term = $2 OR guild_id = $2 AND term = $1',
+                    [guildId, violationResult.term]
+                );
+
+                if (copyrights.rows.length === 0) return;
+
+                const copyright = copyrights.rows[0];
+                if (copyright.owner_id === userId) return;
+
+                const fine = copyright.fine_amount;
+                const reasoning = violationResult.reasoning || 'Unknown';
+
+                if (fine > 0) {
+                    const ownerShare = Math.floor(fine * 0.8);
+                    const treasuryShare = Math.floor(fine * 0.2);
+
+                    await pool.query('UPDATE economy SET coins = coins - $1 WHERE uid = $2', [fine, userId]);
+                    await pool.query('UPDATE economy SET coins = coins + $1 WHERE uid = $2', [ownerShare, copyright.owner_id]);
+
+                    await pool.query(
+                        `INSERT INTO server_treasury (guild_id, balance) VALUES ($1, $2)
+                         ON CONFLICT (guild_id) DO UPDATE SET balance = server_treasury.balance + $2`,
+                        [guildId, treasuryShare]
+                    );
+
+                    await pool.query(
+                        `INSERT INTO copyright_earnings (copyright_id, violator_id, violator_name, fine_collected, owner_share, treasury_share)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [copyright.id, userId, userName, fine, ownerShare, treasuryShare]
+                    );
+                }
+
+                const ownerMention = `<@${copyright.owner_id}>`;
+                const emojis = ['⚠️', '©', '🚫'];
+                for (const emoji of emojis) {
+                    try { await msg.react(emoji); } catch (e) {}
+                }
+
+                const replyMsg = fine > 0
+                    ? `⚠️ <@${userId}>, "${violationResult.term}" is copyrighted by ${ownerMention}! Fine: ${fine} coins (${reasoning})`
+                    : `⚠️ <@${userId}>, "${violationResult.term}" is copyrighted by ${ownerMention}! (${reasoning})`;
+
+                try { await msg.reply(replyMsg); } catch (e) {}
+
+                api.log(`[COPYRIGHT] ${userName} violated "${violationResult.term}" - Fine: ${fine} - ${reasoning}`);
             }
         } catch (e) {
             api.log(`[COPYRIGHT] Error checking message: ${e}`);
         }
+    });
+
+    const EXCEPTIONS = [
+        "that's", "thats", "there", "their", "they're",
+        "this is", "thats so", "oh thats", "no thats",
+        "wait thats", "lol thats", "haha thats", "damn thats",
+        "okay thats", "alright thats", "woah thats",
+        "like thats", "not thats", "aint thats"
+    ];
+    
+    function isException(content: string): boolean {
+        const lower = content.toLowerCase();
+        for (const exc of EXCEPTIONS) {
+            if (lower.includes(exc)) return true;
+        }
+        return false;
+    }
+
+    const SCAN_INTERVAL = 5 * 60 * 1000;
+    let scanIntervalId: NodeJS.Timeout | null = null;
+    
+    async function startPeriodicScan(client: any) {
+        if (scanIntervalId) clearInterval(scanIntervalId);
+        
+        scanIntervalId = setInterval(async () => {
+            if (!copyrightConfig.smartEnabled) return;
+            try {
+                const pool = poolRef || client?.pool;
+                if (!pool) return;
+                
+                const guilds = client.guilds.cache;
+                for (const guild of guilds.values()) {
+                    const copyrights = await pool.query('SELECT * FROM copyrights WHERE guild_id = $1', [guild.id]);
+                    if (copyrights.rows.length === 0) continue;
+                    
+                    const channels = guild.channels.cache.filter((c: any) => c.isTextBased());
+                    for (const channel of channels.values()) {
+                        try {
+                            const messages = await channel.messages.fetch({ limit: 20 });
+                            const fines: any[] = [];
+                            
+                            for (const msg of messages.values()) {
+                                if (msg.author.bot || msg.author.id === client.user?.id) continue;
+                                if (isException(msg.content)) continue;
+                                
+                                const result = await checkSmartViolation(msg.content, msg.author.id, pool);
+                                if (result.violated && result.term) {
+                                    fines.push({
+                                        user: msg.author,
+                                        term: result.term,
+                                        message: msg.content.substring(0, 100)
+                                    });
+                                    
+                                    const copyright = copyrights.rows.find((c: any) => c.term === result.term);
+                                    if (copyright) {
+                                        await pool.query(
+                                            'INSERT INTO copyright_offenses (uid, copyright_id, server_id, message_content) VALUES ($1, $2, $3, $4)',
+                                            [msg.author.id, copyright.id, guild.id, msg.content]
+                                        );
+                                    }
+                                }
+                            }
+                            
+                            if (fines.length > 0) {
+                                const fineList = fines.map(f => `• ${f.user.username}: "${f.message}" - ${f.term}`).join('\n');
+                                
+                                const thread = await channel.threads?.create({
+                                    name: `Appeals-${Date.now()}`,
+                                    autoArchiveDuration: 1440
+                                }).catch(() => null);
+                                
+                                const announceMsg = `🎭 **I have randomly fined ${fines.length} user(s) for the following messages:**\n\n${fineList}\n\n*Thread created for appeals*`;
+                                
+                                if (thread) {
+                                    await thread.send(announceMsg);
+                                    await channel.send(`🎭 I have randomly fined ${fines.length} user(s) for rule violations! Appeals thread: ${thread.url}`);
+                                } else {
+                                    await channel.send(announceMsg);
+                                }
+                            }
+                        } catch (e) {
+                            // Skip failed channels
+                        }
+                    }
+                }
+            } catch (e) {
+                api.log(`[COPYRIGHT] Periodic scan error: ${e}`);
+            }
+        }, SCAN_INTERVAL);
+    }
+    
+    api.listen('clientReady', async () => {
+        await startPeriodicScan(api.client);
     });
 
     api.log("Copyright Management Module Loaded (v2 - Database)");

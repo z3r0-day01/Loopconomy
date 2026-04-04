@@ -175,10 +175,10 @@ function createWebServer() {
                         if (username === auth.username && password === auth.password) {
                             const token = Buffer.from(`${username}:${Date.now()}`).toString('base64');
                             res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ token, mustChangePassword: auth.mustChangePassword, username: auth.username }));
+                            res.end(JSON.stringify({ success: true, token, mustChangePassword: auth.mustChangePassword, username: auth.username }));
                         } else {
                             res.writeHead(401, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ error: 'Invalid credentials' }));
+                            res.end(JSON.stringify({ success: false, error: 'Invalid credentials' }));
                         }
                     } catch (e) {
                         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -610,6 +610,173 @@ function createWebServer() {
                                     res.end(JSON.stringify({ error: e.message }));
                                 }
                                 break;
+                            // ===== SOCIAL CREDIT ENDPOINTS =====
+                            case 'social-credit-get':
+                                try {
+                                    const userId = data.user_id;
+                                    const result = await pool.query(
+                                        'SELECT credit_score, social_credits, rank, total_given, total_received FROM social_credits WHERE user_id = $1',
+                                        [userId]
+                                    );
+                                    if (result.rows.length === 0) {
+                                        res.writeHead(404, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify({ error: 'No social credit record found' }));
+                                    } else {
+                                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify(result.rows[0]));
+                                    }
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'social-credit-set':
+                                try {
+                                    const userId = data.user_id;
+                                    const creditScore = data.credit_score;
+                                    const socialCredits = data.social_credits || 0;
+                                    await pool.query(
+                                        `INSERT INTO social_credits (user_id, credit_score, social_credits) VALUES ($1, $2, $3)
+                                         ON CONFLICT (user_id) DO UPDATE SET credit_score = $2, social_credits = social_credits + $3, last_updated = NOW()`,
+                                        [userId, creditScore, socialCredits]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            // ===== BANK ACCOUNT ENDPOINTS =====
+                            case 'bank-get-balance':
+                                try {
+                                    const userId = data.user_id;
+                                    const serverId = data.server_id || client.guilds.cache.first()?.id;
+                                    const result = await pool.query(
+                                        'SELECT balance, account_type, interest_rate FROM bank_accounts WHERE user_id = $1 AND server_id = $2',
+                                        [userId, serverId]
+                                    );
+                                    if (result.rows.length === 0) {
+                                        res.writeHead(404, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify({ error: 'No bank account found' }));
+                                    } else {
+                                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify(result.rows[0]));
+                                    }
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'bank-create-account':
+                                try {
+                                    const userId = data.user_id;
+                                    const serverId = data.server_id || client.guilds.cache.first()?.id;
+                                    const accountType = data.account_type || 'checking';
+                                    await pool.query(
+                                        `INSERT INTO bank_accounts (user_id, server_id, account_type) VALUES ($1, $2, $3)
+                                         ON CONFLICT (user_id, server_id, account_type) DO NOTHING`,
+                                        [userId, serverId, accountType]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'bank-deposit':
+                                try {
+                                    const userId = data.user_id;
+                                    const serverId = data.server_id || client.guilds.cache.first()?.id;
+                                    const amount = parseFloat(data.amount);
+                                    await pool.query(
+                                        'UPDATE bank_accounts SET balance = balance + $1 WHERE user_id = $2 AND server_id = $3',
+                                        [amount, userId, serverId]
+                                    );
+                                    await pool.query(
+                                        'INSERT INTO bank_transactions (user_id, server_id, transaction_type, amount) VALUES ($1, $2, $3, $4)',
+                                        [userId, serverId, 'deposit', amount]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true, deposited: amount }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'bank-withdraw':
+                                try {
+                                    const userId = data.user_id;
+                                    const serverId = data.server_id || client.guilds.cache.first()?.id;
+                                    const amount = parseFloat(data.amount);
+                                    const result = await pool.query(
+                                        'UPDATE bank_accounts SET balance = GREATEST(0, balance - $1) WHERE user_id = $2 AND server_id = $3 AND balance >= $1 RETURNING balance',
+                                        [amount, userId, serverId]
+                                    );
+                                    if (result.rowCount === 0) {
+                                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify({ error: 'Insufficient funds or account not found' }));
+                                    } else {
+                                        await pool.query(
+                                            'INSERT INTO bank_transactions (user_id, server_id, transaction_type, amount) VALUES ($1, $2, $3, $4)',
+                                            [userId, serverId, 'withdraw', amount]
+                                        );
+                                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                                        res.end(JSON.stringify({ success: true, withdrawn: amount, balance: result.rows[0].balance }));
+                                    }
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            // ===== DEBT ENDPOINTS =====
+                            case 'debt-get':
+                                try {
+                                    const userId = data.user_id;
+                                    const result = await pool.query(
+                                        'SELECT amount, remaining, interest_rate, due_date, created_at FROM bank_loans WHERE user_id = $1 AND remaining > 0',
+                                        [userId]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ loans: result.rows }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'debt-add':
+                                try {
+                                    const userId = data.user_id;
+                                    const serverId = data.server_id || client.guilds.cache.first()?.id;
+                                    const amount = parseFloat(data.amount);
+                                    const interestRate = data.interest_rate || 0.05;
+                                    await pool.query(
+                                        'INSERT INTO bank_loans (user_id, server_id, amount, remaining, interest_rate, due_date) VALUES ($1, $2, $3, $3, $4, NOW() + INTERVAL \'30 days\')',
+                                        [userId, serverId, amount, interestRate]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true, amount }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
+                            case 'debt-pay':
+                                try {
+                                    const userId = data.user_id;
+                                    const amount = parseFloat(data.amount);
+                                    const result = await pool.query(
+                                        'UPDATE bank_loans SET remaining = GREATEST(0, remaining - $1) WHERE user_id = $2 AND remaining > 0 RETURNING remaining, amount',
+                                        [amount, userId]
+                                    );
+                                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ success: true, paid: amount, remaining: result.rows[0]?.remaining }));
+                                } catch (e) {
+                                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                break;
                             // ===== LOG RETRIEVAL =====
                             case 'get-logs':
                                 try {
@@ -883,6 +1050,13 @@ function createWebServer() {
 
         // Admin Panel
         if (req.url === '/admin' || req.url === '/adminpanel') {
+            const authHeader = req.headers['authorization'];
+            const authResult = checkAuth(authHeader);
+            if (!authResult) {
+                res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Basic realm="Admin Panel"' });
+                res.end(JSON.stringify({ error: 'Unauthorized' }));
+                return;
+            }
             const adminPanelPath = path.join(__dirname, 'AdminPanel.html');
             fs.readFile(adminPanelPath, (err, data) => {
                 if (err) {
@@ -1134,7 +1308,7 @@ async function loadAddons() {
             console.error(`Addon ${folderName} has invalid trustLevel. Skipping.`);
             continue;
         }
-        const commandList = config.commandList || [];
+        const commandList = config.commandList || [];  // Empty = allow all commands
 
         const addonFolder = path.join(addonsDir, folderName);
         if (!fs.statSync(addonFolder).isDirectory()) {
@@ -1160,8 +1334,8 @@ async function loadAddons() {
         }
 
         const subCmdList = addonManifest.commandList || [];
-        const invalidCmds = subCmdList.filter((c) => !commandList.includes(c));
-        if (invalidCmds.length > 0) {
+        const invalidCmds = commandList.length > 0 ? subCmdList.filter((c) => !commandList.includes(c)) : [];
+        if (commandList.length > 0 && invalidCmds.length > 0) {
             console.warn(`[SECURITY] ${folderName} sub-manifest has unauthorized commands: ${invalidCmds.join(', ')}. Using root commandList.`);
         }
 
@@ -1186,7 +1360,7 @@ async function loadAddons() {
                 for (const cmd of addon.commands) {
                     if (!cmd.data || !cmd.execute) continue;
                     const cmdName = cmd.data.name;
-                    if (!commandList.includes(cmdName)) {
+                    if (commandList.length > 0 && !commandList.includes(cmdName)) {
                         console.warn(`Addon ${folderName} command ${cmdName} not in root commandList, skipping.`);
                         continue;
                     }

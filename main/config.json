@@ -1,12 +1,16 @@
 {
     "admins": [
         "1328479692394725396",
-        "jkid88"
+        "842147124304281662"
     ],
-    "owner": "1328479692394725396",
+    "owner": "842147124304281662",
+    "logChannel": "logs",
+    "commandList": [],
     "settings": {
         "defaultPrefix": "!",
         "economyEnabled": true,
-        "autoModEnabled": false
+        "autoModEnabled": false,
+        "aiEnabled": true,
+        "aiModel": "glm-5:cloud"
     }
 }
